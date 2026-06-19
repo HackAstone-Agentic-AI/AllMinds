@@ -11,7 +11,7 @@ AllMinds/
 ├── apps/
 │   ├── frontend/          Next.js 13 — teacher dashboard UI
 │   ├── backend/           Express — auth, profiles, learners, forum, tasks
-│   └── agentic-ai/        FastAPI — multi-agent AI teaching companion
+│   └── agents/            FastAPI — multi-agent AI teaching companion
 ├── docs/
 │   ├── database/          Schema and setup notes
 │   └── audit/             Project improvement notes
@@ -26,13 +26,13 @@ AllMinds/
 |---|---|---|---|
 | `apps/frontend` | Next.js 13, Tailwind CSS | 3000 | Teacher dashboard, chat UI |
 | `apps/backend` | Node.js, Express, PostgreSQL | 5000 | Auth, learner profiles, tasks, forum |
-| `apps/agentic-ai` | Python, FastAPI, LangChain, LangGraph | 8000 | AI multi-agent teaching companion |
+| `apps/agents` | Python, FastAPI, LangChain, LangGraph | 8000 | AI multi-agent teaching companion |
 
 ---
 
 ## What Was Built and Changed
 
-### Agentic AI Service (`apps/agentic-ai`)
+### Agents Service (`apps/agents`)
 
 #### Bug Fixes
 | File | Fix |
@@ -74,10 +74,10 @@ A guardrail layer was added to protect every request before it reaches any LLM. 
 ### Frontend (`apps/frontend`)
 
 #### Agent Chat Proxy Route (`app/api/agent/chat/route.ts`)
-Previously pointed to `http://localhost:5000/api/agent/chat` (the Express backend). Updated to proxy directly to the FastAPI agentic-ai service at `AGENTIC_AI_URL/chat`.
+Previously pointed to `http://localhost:5000/api/agent/chat` (the Express backend). Updated to proxy directly to the FastAPI agents service at `AGENTIC_AI_URL/chat`.
 
 #### `lib/api.ts` — `chatWithAgent`
-Previously called the Express backend URL for agent requests. Updated to call the Next.js proxy route at `/api/agent/chat` using a relative URL, which keeps CORS clean and decouples the frontend from the agentic-ai port.
+Previously called the Express backend URL for agent requests. Updated to call the Next.js proxy route at `/api/agent/chat` using a relative URL, which keeps CORS clean and decouples the frontend from the agents port.
 
 #### `components/AgentChat.tsx` — New File
 A floating chat widget that appears on every dashboard page:
@@ -186,7 +186,7 @@ Runs on `http://localhost:5000`. Handles auth, learner profiles, tasks, forum, a
 ### Step 3 — Agentic AI (FastAPI)
 
 ```bash
-cd apps/agentic-ai
+cd apps/agents
 python -m venv .venv                        # only needed once
 .venv/Scripts/activate                      # Windows
 # source .venv/bin/activate                 # Mac/Linux
@@ -225,7 +225,7 @@ AGENTIC_AI_URL=http://127.0.0.1:8000
 
 Go to `http://localhost:3000`, register or log in, and open the dashboard.
 
-The **Thandi** chat button (blue, bottom-right corner) connects to the agentic-ai service. Click it and ask anything — lesson plans, visual support ideas, behaviour strategies, scheduling help, or analytics questions.
+The **Thandi** chat button (blue, bottom-right corner) connects to the agents service. Click it and ask anything — lesson plans, visual support ideas, behaviour strategies, scheduling help, or analytics questions.
 
 ---
 
@@ -240,7 +240,7 @@ Browser
   │
   └── POST /api/agent/chat
         └── Next.js proxy route
-              └── FastAPI agentic-ai  (port 8000)
+              └── FastAPI agents  (port 8000)
                     ├── Guardrails (input check, PII scrub)
                     ├── Supervisor agent  → Groq (routing decision)
                     └── Worker agent      → Gemini (response)
