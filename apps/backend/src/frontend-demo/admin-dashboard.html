@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - AllMinds</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="container mt-5">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h4><i class="fas fa-user-shield me-2"></i> Admin Dashboard</h4>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-success">
+                    <i class="fas fa-check-circle me-2"></i> You are logged in as Admin!
+                </div>
+                <h5>Welcome to AllMinds Admin Portal</h5>
+                <p>This is a placeholder for the admin dashboard. Full admin features coming soon:</p>
+                <ul>
+                    <li>School management</li>
+                    <li>Teacher assignments</li>
+                    <li>Document uploads</li>
+                    <li>Analytics dashboard</li>
+                </ul>
+                <button class="btn btn-danger mt-3" onclick="logout()">
+                    <i class="fas fa-sign-out-alt me-2"></i> Logout
+                </button>
+            </div>
+        </div>
+    </div>
+    <script>
+        function logout() {
+            localStorage.removeItem('allminds_token');
+            localStorage.removeItem('allminds_user');
+            window.location.href = 'index.html';
+        }
+        
+        // Check authentication
+        const token = localStorage.getItem('allminds_token');
+        if (!token) {
+            window.location.href = 'index.html';
+        }
+    </script>
+</body>
+</html>

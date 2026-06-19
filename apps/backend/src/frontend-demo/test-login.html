@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login Test - AllMinds</title>
+    <style>
+        body {
+            font-family: monospace;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1e1e2e;
+            color: #fff;
+        }
+        .card {
+            background: #2d2d3d;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        input, button {
+            padding: 10px;
+            margin: 5px;
+            border-radius: 6px;
+            border: none;
+        }
+        input {
+            width: 200px;
+        }
+        button {
+            background: #E86A5F;
+            color: white;
+            cursor: pointer;
+        }
+        pre {
+            background: #1a1a2a;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+        .success { color: #4ade80; }
+        .error { color: #f87171; }
+        .info { color: #60a5fa; }
+    </style>
+</head>
+<body>
+    <h1>🔐 AllMinds Login Test</h1>
+    
+    <div class="card">
+        <h3>Login Form</h3>
+        <input type="email" id="email" placeholder="Email" value="thandi@sunrise.org">
+        <input type="password" id="password" placeholder="Password" value="password123">
+        <button onclick="testLogin()">Login</button>
+        <button onclick="registerDemo()">Create Demo Account</button>
+        <button onclick="checkStorage()">Check Storage</button>
+        <button onclick="clearStorage()">Clear Storage</button>
+    </div>
+    
+    <div class="card">
+        <h3>Status</h3>
+        <div id="status"></div>
+    </div>
+    
+    <div class="card">
+        <h3>Local Storage Contents</h3>
+        <pre id="storageContents">Click "Check Storage" to see</pre>
+    </div>
+    
+    <div class="card">
+        <h3>API Response</h3>
+        <pre id="apiResponse">Waiting for action...</pre>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:5000/api';
+        
+        async function registerDemo() {
+            const statusDiv = document.getElementById('status');
+            const responseDiv = document.getElementById('apiResponse');
+            
+            statusDiv.innerHTML = '<div class="info">📝 Creating demo account...</div>';
+            
+            try {
+                const response = await fetch(`${API_URL}/auth/register`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: 'thandi@sunrise.org',
+                        password: 'password123',
+                        full_name: 'Thandi Nkosi',
+                        role: 'teacher',
+                        school_name: 'Sunrise Academy',
+                        province: 'Gauteng',
+                        city: 'Johannesburg'
+                    })
+                });
+                
+                const data = await response.json();
+                responseDiv.innerHTML = JSON.stringify(data, null, 2);
+                
+                if (response.ok) {
+                    statusDiv.innerHTML = '<div class="success">✅ Demo account created successfully!</div>';
+                } else {
+                    statusDiv.innerHTML = `<div class="error">❌ Error: ${data.error || 'Unknown error'}</div>`;
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="error">❌ Connection error: ${error.message}</div>`;
+                responseDiv.innerHTML = error.message;
+            }
+        }
+        
+        async function testLogin() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const statusDiv = document.getElementById('status');
+            const responseDiv = document.getElementById('apiResponse');
+            
+            statusDiv.innerHTML = '<div class="info">🔄 Logging in...</div>';
+            
+            try {
+                console.log('Attempting login with:', email);
+                
+                const response = await fetch(`${API_URL}/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                
+                const data = await response.json();
+                responseDiv.innerHTML = JSON.stringify(data, null, 2);
+                
+                console.log('Response status:', response.status);
+                console.log('Response data:', data);
+                
+                if (response.ok) {
+                    // Try to save to localStorage
+                    try {
+                        localStorage.setItem('allminds_token', data.token);
+                        localStorage.setItem('allminds_user', JSON.stringify(data.user));
+                        
+                        // Verify it saved
+                        const savedToken = localStorage.getItem('allminds_token');
+                        const savedUser = localStorage.getItem('allminds_user');
+                        
+                        if (savedToken && savedUser) {
+                            statusDiv.innerHTML = `
+                                <div class="success">
+                                    ✅ Login successful!<br>
+                                    Token saved: ${savedToken.substring(0, 50)}...<br>
+                                    User saved: ${savedUser.substring(0, 100)}...
+                                </div>
+                            `;
+                            
+                            // Show storage contents
+                            checkStorage();
+                            
+                            // Option to redirect
+                            setTimeout(() => {
+                                if (confirm('Login successful! Go to teacher dashboard?')) {
+                                    window.location.href = 'teacher-dashboard.html';
+                                }
+                            }, 500);
+                        } else {
+                            statusDiv.innerHTML = '<div class="error">❌ Failed to save to localStorage. Storage might be disabled.</div>';
+                        }
+                    } catch (storageError) {
+                        statusDiv.innerHTML = `<div class="error">❌ localStorage error: ${storageError.message}</div>`;
+                    }
+                } else {
+                    statusDiv.innerHTML = `<div class="error">❌ Login failed: ${data.error || 'Unknown error'}</div>`;
+                }
+            } catch (error) {
+                console.error('Login error:', error);
+                statusDiv.innerHTML = `<div class="error">❌ Connection error: ${error.message}</div>`;
+                responseDiv.innerHTML = error.message;
+            }
+        }
+        
+        function checkStorage() {
+            const pre = document.getElementById('storageContents');
+            const token = localStorage.getItem('allminds_token');
+            const user = localStorage.getItem('allminds_user');
+            
+            if (token || user) {
+                pre.innerHTML = `
+                    <span class="success">✅ Token exists:</span> ${token ? token.substring(0, 100) + '...' : 'No token'}\n
+                    <span class="success">✅ User exists:</span> ${user ? user : 'No user'}\n
+                    <span class="info">📋 Full user data:</span> ${user}
+                `;
+            } else {
+                pre.innerHTML = '<span class="error">❌ No data found in localStorage</span>';
+            }
+        }
+        
+        function clearStorage() {
+            localStorage.removeItem('allminds_token');
+            localStorage.removeItem('allminds_user');
+            checkStorage();
+            document.getElementById('status').innerHTML = '<div class="info">🗑️ Storage cleared</div>';
+        }
+        
+        // Check on page load
+        checkStorage();
+    </script>
+</body>
+</html>

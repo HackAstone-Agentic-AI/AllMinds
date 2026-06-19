@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AllMinds API Tester</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h2 {
+            color: #E86A5F;
+            margin-top: 0;
+        }
+        input, select, textarea {
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            width: 100%;
+            max-width: 400px;
+        }
+        button {
+            background: #E86A5F;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #c94f45;
+        }
+        pre {
+            background: #f0f0f0;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+        }
+        .token-display {
+            background: #e8f5e9;
+            padding: 10px;
+            border-radius: 6px;
+            font-family: monospace;
+            word-break: break-all;
+        }
+    </style>
+</head>
+<body>
+    <h1>🌱 AllMinds API Tester</h1>
+    
+    <div class="container">
+        <h2>🔐 Login / Register</h2>
+        <div class="grid">
+            <div>
+                <h3>Login</h3>
+                <input type="email" id="loginEmail" placeholder="Email" value="test@teacher.com">
+                <input type="password" id="loginPassword" placeholder="Password" value="password123">
+                <button onclick="login()">Login</button>
+            </div>
+            <div>
+                <h3>Register</h3>
+                <input type="text" id="regName" placeholder="Full Name">
+                <input type="email" id="regEmail" placeholder="Email">
+                <input type="password" id="regPassword" placeholder="Password">
+                <input type="text" id="regSchool" placeholder="School Name">
+                <button onclick="register()">Register</button>
+            </div>
+        </div>
+        <div id="tokenDisplay" class="token-display" style="display:none;">
+            <strong>🔑 Your Token:</strong> <span id="token"></span>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>📍 NGOs</h2>
+        <button onclick="getNGOs()">Get All NGOs</button>
+        <button onclick="getNGOsByProvince('Gauteng')">Filter: Gauteng</button>
+        <button onclick="getNGOsByProvince('KwaZulu-Natal')">Filter: KZN</button>
+        <pre id="ngoResult">Click a button to see NGOs...</pre>
+    </div>
+
+    <div class="container">
+        <h2>💡 Community Strategies</h2>
+        <button onclick="getStrategies()">Get All Strategies</button>
+        <button onclick="getStrategiesByType('sensory')">Filter: Sensory</button>
+        <button onclick="getStrategiesByType('transitions')">Filter: Transitions</button>
+        <pre id="strategyResult">Click a button to see strategies...</pre>
+    </div>
+
+    <div class="container">
+        <h2>📝 Share a Strategy (Login Required)</h2>
+        <input type="text" id="strategyTitle" placeholder="Strategy Title">
+        <select id="strategyType">
+            <option value="transitions">Transitions</option>
+            <option value="sensory">Sensory</option>
+            <option value="communication">Communication</option>
+            <option value="social">Social Skills</option>
+        </select>
+        <textarea id="strategyDesc" rows="3" placeholder="Describe your strategy..."></textarea>
+        <button onclick="shareStrategy()">Share Strategy</button>
+        <pre id="shareResult"></pre>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:5000/api';
+        let authToken = null;
+
+        async function login() {
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+            
+            try {
+                const response = await fetch(`${API_URL}/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    authToken = data.token;
+                    document.getElementById('tokenDisplay').style.display = 'block';
+                    document.getElementById('token').textContent = authToken.substring(0, 50) + '...';
+                    alert('Login successful!');
+                } else {
+                    alert('Login failed: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        async function register() {
+            const name = document.getElementById('regName').value;
+            const email = document.getElementById('regEmail').value;
+            const password = document.getElementById('regPassword').value;
+            const school = document.getElementById('regSchool').value;
+            
+            try {
+                const response = await fetch(`${API_URL}/auth/register`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        full_name: name, 
+                        email, 
+                        password, 
+                        school_name: school,
+                        role: 'teacher',
+                        province: 'Gauteng',
+                        city: 'Johannesburg'
+                    })
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    alert('Registration successful! You can now login.');
+                } else {
+                    alert('Registration failed: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        async function getNGOs() {
+            try {
+                const response = await fetch(`${API_URL}/ngos`);
+                const data = await response.json();
+                document.getElementById('ngoResult').textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                document.getElementById('ngoResult').textContent = 'Error: ' + error.message;
+            }
+        }
+
+        async function getNGOsByProvince(province) {
+            try {
+                const response = await fetch(`${API_URL}/ngos?province=${province}`);
+                const data = await response.json();
+                document.getElementById('ngoResult').textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                document.getElementById('ngoResult').textContent = 'Error: ' + error.message;
+            }
+        }
+
+        async function getStrategies() {
+            try {
+                const response = await fetch(`${API_URL}/strategies`);
+                const data = await response.json();
+                document.getElementById('strategyResult').textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                document.getElementById('strategyResult').textContent = 'Error: ' + error.message;
+            }
+        }
+
+        async function getStrategiesByType(type) {
+            try {
+                const response = await fetch(`${API_URL}/strategies?challenge_type=${type}`);
+                const data = await response.json();
+                document.getElementById('strategyResult').textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                document.getElementById('strategyResult').textContent = 'Error: ' + error.message;
+            }
+        }
+
+        async function shareStrategy() {
+            if (!authToken) {
+                alert('Please login first!');
+                return;
+            }
+            const title = document.getElementById('strategyTitle').value;
+            const type = document.getElementById('strategyType').value;
+            const desc = document.getElementById('strategyDesc').value;
+            
+            if (!title || !desc) {
+                alert('Please fill in title and description');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_URL}/strategies`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({ 
+                        title, 
+                        challenge_type: type, 
+                        description: desc,
+                        grade_level: 'Grade R'
+                    })
+                });
+                const data = await response.json();
+                document.getElementById('shareResult').textContent = JSON.stringify(data, null, 2);
+                if (response.ok) {
+                    alert('Strategy shared successfully!');
+                    document.getElementById('strategyTitle').value = '';
+                    document.getElementById('strategyDesc').value = '';
+                }
+            } catch (error) {
+                document.getElementById('shareResult').textContent = 'Error: ' + error.message;
+            }
+        }
+    </script>
+</body>
+</html>

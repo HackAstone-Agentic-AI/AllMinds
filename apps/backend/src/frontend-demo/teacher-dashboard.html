@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teacher Dashboard - AllMinds</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            background: #f5f7fb;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+        }
+        .sidebar {
+            background: white;
+            min-height: 100vh;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.05);
+        }
+        .sidebar .nav-link {
+            color: #4a5568;
+            padding: 12px 20px;
+            border-radius: 10px;
+            margin: 4px 0;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+        .sidebar .nav-link:hover {
+            background: #fef2f0;
+            color: #E86A5F;
+        }
+        .sidebar .nav-link.active {
+            background: #E86A5F;
+            color: white;
+        }
+        .card {
+            border: none;
+            border-radius: 16px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            transition: transform 0.2s;
+        }
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #E86A5F 0%, #c94f45 100%);
+            color: white;
+        }
+        .stat-card i {
+            font-size: 2rem;
+            opacity: 0.8;
+        }
+        .btn-primary {
+            background: #E86A5F;
+            border: none;
+            border-radius: 10px;
+        }
+        .btn-primary:hover {
+            background: #c94f45;
+        }
+        .strategy-card {
+            background: white;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+            border-left: 4px solid #E86A5F;
+        }
+        .ngo-card {
+            background: white;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+            transition: all 0.2s;
+        }
+        .ngo-card:hover {
+            transform: translateX(5px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .rating {
+            color: #ffc107;
+        }
+        .user-info {
+            background: linear-gradient(135deg, #1E4A5F 0%, #2d6a85 100%);
+            color: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .logo-icon {
+            font-size: 32px;
+        }
+        .bg-gradient {
+            background: linear-gradient(135deg, #E86A5F, #1E4A5F);
+            display: inline-block;
+            width: 50px;
+            height: 50px;
+            border-radius: 12px;
+            text-align: center;
+            line-height: 50px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Sidebar -->
+            <div class="col-md-3 col-lg-2 px-0">
+                <div class="sidebar p-3">
+                    <div class="text-center mb-4">
+                        <div class="logo-icon bg-gradient mb-2">🌱</div>
+                        <h5 class="fw-bold">AllMinds</h5>
+                        <small class="text-muted">Teacher Portal</small>
+                    </div>
+                    <nav class="nav flex-column">
+                        <a class="nav-link active" href="#" onclick="showSection('dashboard'); return false;">
+                            <i class="fas fa-tachometer-alt me-2"></i> Dashboard
+                        </a>
+                        <a class="nav-link" href="#" onclick="showSection('ngos'); return false;">
+                            <i class="fas fa-map-marker-alt me-2"></i> Find Support
+                        </a>
+                        <a class="nav-link" href="#" onclick="showSection('strategies'); return false;">
+                            <i class="fas fa-lightbulb me-2"></i> Strategies
+                        </a>
+                        <a class="nav-link" href="#" onclick="showSection('share'); return false;">
+                            <i class="fas fa-share-alt me-2"></i> Share Strategy
+                        </a>
+                        <hr>
+                        <a class="nav-link text-danger" href="#" onclick="logout(); return false;">
+                            <i class="fas fa-sign-out-alt me-2"></i> Logout
+                        </a>
+                    </nav>
+                </div>
+            </div>
+            
+            <!-- Main Content -->
+            <div class="col-md-9 col-lg-10 p-4">
+                <!-- User Info -->
+                <div class="user-info mb-4" id="userInfo">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h4 class="mb-0" id="userName">Loading...</h4>
+                            <small><i class="fas fa-school me-1"></i> <span id="userSchool"></span></small>
+                        </div>
+                        <div class="text-end">
+                            <small>Logged in as</small><br>
+                            <span id="userRole" class="badge bg-light text-dark"></span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Dashboard Section -->
+                <div id="dashboardSection">
+                    <div class="row mb-4">
+                        <div class="col-md-4 mb-3">
+                            <div class="card stat-card p-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <h6 class="mb-1">Lessons Adapted</h6>
+                                        <h3 class="mb-0" id="statLessons">0</h3>
+                                    </div>
+                                    <i class="fas fa-chalkboard"></i>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <div class="card stat-card p-3" style="background: linear-gradient(135deg, #81B29A 0%, #5F9479 100%);">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <h6 class="mb-1">Strategies Shared</h6>
+                                        <h3 class="mb-0" id="statStrategies">0</h3>
+                                    </div>
+                                    <i class="fas fa-users"></i>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <div class="card stat-card p-3" style="background: linear-gradient(135deg, #F2CC8F 0%, #E6B84E 100%);">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <h6 class="mb-1">NGOs Found</h6>
+                                        <h3 class="mb-0" id="statNGOs">0</h3>
+                                    </div>
+                                    <i class="fas fa-hand-holding-heart"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="card p-4">
+                        <h5><i class="fas fa-newspaper me-2"></i> Recent Activity</h5>
+                        <div id="recentActivity">
+                            <p class="text-muted">Loading...</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- NGOs Section -->
+                <div id="ngosSection" style="display: none;">
+                    <div class="card p-4">
+                        <h5 class="mb-3"><i class="fas fa-map-marker-alt me-2 text-danger"></i> Find Support Near You</h5>
+                        <div class="row mb-3">
+                            <div class="col-md-4">
+                                <select id="provinceFilter" class="form-select">
+                                    <option value="">All Provinces</option>
+                                    <option value="Gauteng">Gauteng</option>
+                                    <option value="KwaZulu-Natal">KwaZulu-Natal</option>
+                                    <option value="Western Cape">Western Cape</option>
+                                    <option value="Eastern Cape">Eastern Cape</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <select id="serviceFilter" class="form-select">
+                                    <option value="">All Services</option>
+                                    <option value="Speech therapy">Speech Therapy</option>
+                                    <option value="Occupational therapy">Occupational Therapy</option>
+                                    <option value="Parent workshops">Parent Workshops</option>
+                                    <option value="Assessment">Assessment</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <button class="btn btn-primary w-100" onclick="loadNGOs()">
+                                    <i class="fas fa-search me-2"></i> Search
+                                </button>
+                            </div>
+                        </div>
+                        <div id="ngoList">
+                            <p class="text-muted">Select filters and click Search to see NGOs...</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Strategies Section -->
+                <div id="strategiesSection" style="display: none;">
+                    <div class="card p-4">
+                        <h5 class="mb-3"><i class="fas fa-lightbulb me-2 text-warning"></i> Community Strategies</h5>
+                        <div class="mb-3">
+                            <select id="strategyTypeFilter" class="form-select w-auto" onchange="loadStrategies()">
+                                <option value="">All Types</option>
+                                <option value="transitions">Transitions</option>
+                                <option value="sensory">Sensory</option>
+                                <option value="communication">Communication</option>
+                                <option value="social">Social Skills</option>
+                            </select>
+                        </div>
+                        <div id="strategyList">
+                            <p class="text-muted">Click the button above to load strategies...</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Share Strategy Section -->
+                <div id="shareSection" style="display: none;">
+                    <div class="card p-4">
+                        <h5 class="mb-3"><i class="fas fa-share-alt me-2 text-success"></i> Share Your Teaching Strategy</h5>
+                        <form id="shareStrategyForm">
+                            <div class="mb-3">
+                                <label class="form-label">Strategy Title</label>
+                                <input type="text" class="form-control" id="strategyTitle" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Challenge Type</label>
+                                <select class="form-select" id="strategyChallengeType" required>
+                                    <option value="transitions">Transitions</option>
+                                    <option value="sensory">Sensory Overload</option>
+                                    <option value="communication">Communication</option>
+                                    <option value="social">Social Skills</option>
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Description</label>
+                                <textarea class="form-control" id="strategyDescription" rows="4" required></textarea>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Materials Needed</label>
+                                <input type="text" class="form-control" id="strategyMaterials">
+                            </div>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-paper-plane me-2"></i> Share Strategy
+                            </button>
+                        </form>
+                        <div id="shareMessage" class="mt-3"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:5000/api';
+        let currentUser = null;
+        let authToken = null;
+        
+        // Check authentication on load
+        window.onload = function() {
+            authToken = localStorage.getItem('allminds_token');
+            const userStr = localStorage.getItem('allminds_user');
+            
+            console.log('Token exists:', !!authToken);
+            console.log('User exists:', !!userStr);
+            
+            if (!authToken || !userStr) {
+                console.log('No token or user, redirecting to login');
+                window.location.href = 'index.html';
+                return;
+            }
+            
+            try {
+                currentUser = JSON.parse(userStr);
+                document.getElementById('userName').textContent = currentUser.full_name || 'Teacher';
+                document.getElementById('userSchool').textContent = currentUser.school_name || 'No school assigned';
+                document.getElementById('userRole').textContent = currentUser.role || 'Teacher';
+                
+                // Load dashboard data
+                loadDashboardStats();
+                loadRecentStrategies();
+            } catch (error) {
+                console.error('Error loading user data:', error);
+                window.location.href = 'index.html';
+            }
+        };
+        
+        async function loadDashboardStats() {
+            try {
+                const response = await fetch(`${API_URL}/stats/teacher`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        // Token expired or invalid
+                        logout();
+                        return;
+                    }
+                    throw new Error('Failed to load stats');
+                }
+                
+                const stats = await response.json();
+                document.getElementById('statLessons').textContent = stats.stats?.lessons_adapted || 0;
+                document.getElementById('statStrategies').textContent = stats.stats?.strategies_shared || 0;
+                document.getElementById('statNGOs').textContent = stats.stats?.ngo_reviews || 0;
+                
+            } catch (error) {
+                console.error('Error loading stats:', error);
+                document.getElementById('statLessons').textContent = '0';
+                document.getElementById('statStrategies').textContent = '0';
+                document.getElementById('statNGOs').textContent = '0';
+            }
+        }
+        
+        async function loadRecentStrategies() {
+            try {
+                const response = await fetch(`${API_URL}/strategies`);
+                const data = await response.json();
+                
+                if (data.strategies && data.strategies.length > 0) {
+                    const recentHtml = data.strategies.slice(0, 5).map(strategy => `
+                        <div class="strategy-card">
+                            <h6 class="mb-1">${escapeHtml(strategy.title)}</h6>
+                            <p class="small text-muted mb-0">${escapeHtml(strategy.description.substring(0, 100))}...</p>
+                            <small><i class="fas fa-thumbs-up me-1"></i> ${strategy.helpful_count || 0} helpful</small>
+                        </div>
+                    `).join('');
+                    document.getElementById('recentActivity').innerHTML = recentHtml;
+                } else {
+                    document.getElementById('recentActivity').innerHTML = '<p class="text-muted">No strategies shared yet. Be the first!</p>';
+                }
+            } catch (error) {
+                console.error('Error loading recent strategies:', error);
+                document.getElementById('recentActivity').innerHTML = '<p class="text-muted">Unable to load recent activity</p>';
+            }
+        }
+        
+        async function loadNGOs() {
+            const province = document.getElementById('provinceFilter').value;
+            const service = document.getElementById('serviceFilter').value;
+            
+            let url = `${API_URL}/ngos`;
+            const params = [];
+            if (province) params.push(`province=${encodeURIComponent(province)}`);
+            if (service) params.push(`service=${encodeURIComponent(service)}`);
+            if (params.length) url += '?' + params.join('&');
+            
+            document.getElementById('ngoList').innerHTML = '<p class="text-muted">Loading NGOs...</p>';
+            
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (response.ok && data.ngos && data.ngos.length > 0) {
+                    document.getElementById('ngoList').innerHTML = data.ngos.map(ngo => `
+                        <div class="ngo-card">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <h6 class="mb-1">${escapeHtml(ngo.name)}</h6>
+                                    <small class="text-muted">📍 ${ngo.city || 'N/A'}, ${ngo.province || 'N/A'}</small>
+                                </div>
+                                <div class="rating">
+                                    ${'★'.repeat(Math.floor(ngo.rating || 0))}${'☆'.repeat(5-Math.floor(ngo.rating || 0))}
+                                    <small>(${ngo.rating || 0})</small>
+                                </div>
+                            </div>
+                            <div class="mt-2">
+                                ${ngo.services ? ngo.services.map(s => `<span class="badge bg-secondary me-1">${escapeHtml(s)}</span>`).join('') : ''}
+                            </div>
+                            <div class="mt-2">
+                                <small><i class="fas fa-phone me-1"></i> ${ngo.contact_phone || 'Contact info not available'}</small>
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    document.getElementById('ngoList').innerHTML = '<p class="text-muted">No NGOs found in this area. Try different filters.</p>';
+                }
+            } catch (error) {
+                console.error('Error loading NGOs:', error);
+                document.getElementById('ngoList').innerHTML = '<p class="text-danger">Error loading NGOs. Make sure the backend is running.</p>';
+            }
+        }
+        
+        async function loadStrategies() {
+            const type = document.getElementById('strategyTypeFilter').value;
+            let url = `${API_URL}/strategies`;
+            if (type) url += `?challenge_type=${encodeURIComponent(type)}`;
+            
+            document.getElementById('strategyList').innerHTML = '<p class="text-muted">Loading strategies...</p>';
+            
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (response.ok && data.strategies && data.strategies.length > 0) {
+                    document.getElementById('strategyList').innerHTML = data.strategies.map(strategy => `
+                        <div class="strategy-card">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <h6 class="mb-1">${escapeHtml(strategy.title)}</h6>
+                                <small class="text-muted">
+                                    <i class="fas fa-thumbs-up me-1"></i> ${strategy.helpful_count || 0}
+                                </small>
+                            </div>
+                            <p class="small text-muted mb-2">${escapeHtml(strategy.description)}</p>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <small><i class="fas fa-user me-1"></i> ${escapeHtml(strategy.author_name || 'Anonymous')}</small>
+                                <button class="btn btn-sm btn-outline-primary" onclick="voteStrategy(${strategy.id})">
+                                    <i class="fas fa-thumbs-up"></i> Helpful
+                                </button>
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    document.getElementById('strategyList').innerHTML = '<p class="text-muted">No strategies found. Be the first to share!</p>';
+                }
+            } catch (error) {
+                console.error('Error loading strategies:', error);
+                document.getElementById('strategyList').innerHTML = '<p class="text-danger">Error loading strategies. Make sure the backend is running.</p>';
+            }
+        }
+        
+        async function voteStrategy(strategyId) {
+            if (!authToken) {
+                alert('Please login to vote');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_URL}/strategies/${strategyId}/vote`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (response.ok) {
+                    showToast('Thanks for voting!');
+                    loadStrategies(); // Refresh the list
+                } else if (response.status === 409) {
+                    showToast('You already voted for this strategy');
+                } else if (response.status === 401) {
+                    logout();
+                } else {
+                    showToast('Error voting. Please try again.');
+                }
+            } catch (error) {
+                console.error('Error voting:', error);
+                showToast('Network error. Please try again.');
+            }
+        }
+        
+        // Share strategy form submission
+        document.getElementById('shareStrategyForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            if (!authToken) {
+                alert('Please login to share a strategy');
+                return;
+            }
+            
+            const strategyData = {
+                title: document.getElementById('strategyTitle').value,
+                challenge_type: document.getElementById('strategyChallengeType').value,
+                description: document.getElementById('strategyDescription').value,
+                materials_needed: document.getElementById('strategyMaterials').value,
+                grade_level: 'Grade R'
+            };
+            
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            const originalText = submitBtn.innerHTML;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Sharing...';
+            submitBtn.disabled = true;
+            
+            try {
+                const response = await fetch(`${API_URL}/strategies`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify(strategyData)
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    document.getElementById('shareMessage').innerHTML = `
+                        <div class="alert alert-success alert-dismissible fade show" role="alert">
+                            <i class="fas fa-check-circle me-2"></i> ${result.message || 'Strategy shared successfully! Waiting for admin approval.'}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    `;
+                    document.getElementById('shareStrategyForm').reset();
+                    
+                    // Refresh strategies count
+                    loadDashboardStats();
+                    
+                    setTimeout(() => {
+                        document.getElementById('shareMessage').innerHTML = '';
+                    }, 5000);
+                } else {
+                    document.getElementById('shareMessage').innerHTML = `
+                        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                            <i class="fas fa-exclamation-circle me-2"></i> ${result.error || 'Error sharing strategy'}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error sharing strategy:', error);
+                document.getElementById('shareMessage').innerHTML = `
+                    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                        <i class="fas fa-exclamation-circle me-2"></i> Network error. Please make sure the backend is running.
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                `;
+            } finally {
+                submitBtn.innerHTML = originalText;
+                submitBtn.disabled = false;
+            }
+        });
+        
+        function showSection(section) {
+            // Hide all sections
+            document.getElementById('dashboardSection').style.display = 'none';
+            document.getElementById('ngosSection').style.display = 'none';
+            document.getElementById('strategiesSection').style.display = 'none';
+            document.getElementById('shareSection').style.display = 'none';
+            
+            // Show selected section
+            if (section === 'dashboard') {
+                document.getElementById('dashboardSection').style.display = 'block';
+                loadDashboardStats();
+                loadRecentStrategies();
+            } else if (section === 'ngos') {
+                document.getElementById('ngosSection').style.display = 'block';
+            } else if (section === 'strategies') {
+                document.getElementById('strategiesSection').style.display = 'block';
+                loadStrategies();
+            } else if (section === 'share') {
+                document.getElementById('shareSection').style.display = 'block';
+            }
+            
+            // Update active nav link
+            document.querySelectorAll('.sidebar .nav-link').forEach(link => {
+                link.classList.remove('active');
+            });
+            // Find the clicked link and add active class
+            const links = document.querySelectorAll('.sidebar .nav-link');
+            for (let link of links) {
+                if (link.textContent.toLowerCase().includes(section)) {
+                    link.classList.add('active');
+                    break;
+                }
+            }
+        }
+        
+        function logout() {
+            localStorage.removeItem('allminds_token');
+            localStorage.removeItem('allminds_user');
+            window.location.href = 'index.html';
+        }
+        
+        function showToast(message) {
+            // Create toast container if it doesn't exist
+            let toastContainer = document.querySelector('.toast-container');
+            if (!toastContainer) {
+                toastContainer = document.createElement('div');
+                toastContainer.className = 'position-fixed bottom-0 end-0 p-3';
+                toastContainer.style.zIndex = '1000';
+                document.body.appendChild(toastContainer);
+            }
+            
+            const toast = document.createElement('div');
+            toast.className = 'toast show';
+            toast.setAttribute('role', 'alert');
+            toast.innerHTML = `
+                <div class="toast-body bg-success text-white rounded">
+                    <i class="fas fa-check-circle me-2"></i> ${message}
+                </div>
+            `;
+            toastContainer.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+        
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Add event listeners for NGO filters
+        document.getElementById('provinceFilter')?.addEventListener('change', () => loadNGOs());
+        document.getElementById('serviceFilter')?.addEventListener('change', () => loadNGOs());
+    </script>
+</body>
+</html>

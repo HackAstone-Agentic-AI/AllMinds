@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AllMinds - AI Teaching Assistant</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            background: linear-gradient(135deg, #E86A5F 0%, #1E4A5F 100%);
+            min-height: 100vh;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+        }
+        .login-card {
+            background: white;
+            border-radius: 24px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+            padding: 40px;
+            max-width: 450px;
+            margin: 80px auto;
+            animation: fadeIn 0.5s ease;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .logo {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .logo-icon {
+            width: 70px;
+            height: 70px;
+            background: linear-gradient(135deg, #E86A5F, #1E4A5F);
+            border-radius: 20px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 36px;
+            color: white;
+            margin-bottom: 16px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+        }
+        .btn-primary {
+            background: #E86A5F;
+            border: none;
+            padding: 12px;
+            border-radius: 40px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        .btn-primary:hover {
+            background: #c94f45;
+            transform: translateY(-2px);
+        }
+        .alert {
+            border-radius: 12px;
+            margin-top: 20px;
+        }
+        .demo-accounts {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 15px;
+            margin-top: 20px;
+        }
+        .spinner-border-sm {
+            width: 1rem;
+            height: 1rem;
+        }
+        code {
+            background: #e9ecef;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="login-card">
+            <div class="logo">
+                <div class="logo-icon">🌱</div>
+                <h2 style="color: #1E4A5F; font-weight: 700;">AllMinds</h2>
+                <p class="text-muted">AI Teaching Assistant for SA Preschools</p>
+            </div>
+            
+            <!-- Status indicator -->
+            <div id="apiStatus" class="alert alert-info" style="display: none;">
+                <i class="fas fa-spinner fa-spin"></i> Checking connection...
+            </div>
+            
+            <form id="loginForm">
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Email address</label>
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="fas fa-envelope"></i></span>
+                        <input type="email" class="form-control" id="email" required placeholder="teacher@school.org" value="thandi@sunrise.org">
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Password</label>
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="fas fa-lock"></i></span>
+                        <input type="password" class="form-control" id="password" required placeholder="••••••" value="password123">
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary w-100" id="loginBtn">
+                    <i class="fas fa-sign-in-alt me-2"></i>Login
+                </button>
+            </form>
+            
+            <div class="demo-accounts">
+                <p class="text-center mb-2 fw-semibold">📋 Demo Accounts</p>
+                <div class="row text-center small">
+                    <div class="col-6">
+                        <strong>👩‍🏫 Teacher</strong><br>
+                        thandi@sunrise.org<br>
+                        <code>password123</code>
+                    </div>
+                    <div class="col-6">
+                        <strong>👨‍💼 Admin</strong><br>
+                        admin@allminds.org<br>
+                        <code>admin123</code>
+                    </div>
+                </div>
+                <p class="text-center small text-muted mt-2">
+                    <i class="fas fa-info-circle"></i> If login fails, <a href="#" onclick="registerDemoAccounts(); return false;">click here to create demo accounts</a>
+                </p>
+            </div>
+            
+            <div id="message" class="mt-3"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:5000/api';
+        
+        // Function to create demo accounts if they don't exist
+        async function registerDemoAccounts() {
+            showMessage('Creating demo accounts... Please wait.', 'info');
+            
+            // Create teacher account
+            try {
+                const teacherResponse = await fetch(`${API_URL}/auth/register`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: 'thandi@sunrise.org',
+                        password: 'password123',
+                        full_name: 'Thandi Nkosi',
+                        role: 'teacher',
+                        school_name: 'Sunrise Academy',
+                        province: 'Gauteng',
+                        city: 'Johannesburg',
+                        phone: '011-123-4567',
+                        language_pref: 'English'
+                    })
+                });
+                
+                const adminResponse = await fetch(`${API_URL}/auth/register`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: 'admin@allminds.org',
+                        password: 'admin123',
+                        full_name: 'School Administrator',
+                        role: 'admin',
+                        school_name: 'AllMinds Demo School',
+                        province: 'Gauteng',
+                        city: 'Johannesburg',
+                        phone: '011-765-4321',
+                        language_pref: 'English'
+                    })
+                });
+                
+                if (teacherResponse.ok || adminResponse.ok) {
+                    showMessage('Demo accounts created! You can now login.', 'success');
+                } else {
+                    const teacherData = await teacherResponse.json();
+                    const adminData = await adminResponse.json();
+                    if (teacherData.error && teacherData.error.includes('already exists')) {
+                        showMessage('Demo accounts already exist! Please login.', 'info');
+                    } else {
+                        showMessage('Error creating accounts. They may already exist.', 'warning');
+                    }
+                }
+            } catch (error) {
+                console.error('Error creating demo accounts:', error);
+                showMessage('Cannot connect to server. Make sure backend is running on port 5000', 'danger');
+            }
+        }
+        
+        // Check if backend is running on page load
+        async function checkBackendStatus() {
+            const statusDiv = document.getElementById('apiStatus');
+            statusDiv.style.display = 'block';
+            
+            try {
+                const response = await fetch(`${API_URL}/health`);
+                if (response.ok) {
+                    statusDiv.innerHTML = '<i class="fas fa-check-circle"></i> ✅ Connected to backend server';
+                    statusDiv.className = 'alert alert-success';
+                    setTimeout(() => {
+                        statusDiv.style.display = 'none';
+                    }, 3000);
+                } else {
+                    statusDiv.innerHTML = '<i class="fas fa-exclamation-triangle"></i> ⚠️ Backend server is not responding';
+                    statusDiv.className = 'alert alert-warning';
+                }
+            } catch (error) {
+                statusDiv.innerHTML = '<i class="fas fa-times-circle"></i> ❌ Cannot connect to backend. Make sure server is running on port 5000';
+                statusDiv.className = 'alert alert-danger';
+                console.error('Backend connection error:', error);
+            }
+        }
+        
+        // Login function
+        async function login(email, password) {
+            const loginBtn = document.getElementById('loginBtn');
+            const originalText = loginBtn.innerHTML;
+            
+            // Show loading state
+            loginBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Logging in...';
+            loginBtn.disabled = true;
+            
+            try {
+                console.log('Attempting login with:', email);
+                
+                const response = await fetch(`${API_URL}/auth/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ email, password })
+                });
+                
+                const data = await response.json();
+                console.log('Login response:', response.status, data);
+                
+                if (response.ok) {
+                    // Store token and user data
+                    localStorage.setItem('allminds_token', data.token);
+                    localStorage.setItem('allminds_user', JSON.stringify(data.user));
+                    
+                    // Verify they were stored
+                    const savedToken = localStorage.getItem('allminds_token');
+                    console.log('Token saved successfully:', !!savedToken);
+                    
+                    showMessage('Login successful! Redirecting...', 'success');
+                    
+                    // Redirect based on role
+                    setTimeout(() => {
+                        if (data.user.role === 'admin') {
+                            window.location.href = 'admin-dashboard.html';
+                        } else {
+                            window.location.href = 'teacher-dashboard.html';
+                        }
+                    }, 1000);
+                } else {
+                    showMessage(data.error || 'Login failed. Please check your credentials.', 'danger');
+                    loginBtn.innerHTML = originalText;
+                    loginBtn.disabled = false;
+                    
+                    // If login fails, offer to create demo accounts
+                    if (data.error && data.error.includes('Invalid')) {
+                        setTimeout(() => {
+                            showMessage('Try clicking "Create demo accounts" below if you haven\'t registered yet.', 'info');
+                        }, 2000);
+                    }
+                }
+            } catch (error) {
+                console.error('Login error:', error);
+                showMessage('Cannot connect to server. Make sure the backend is running on port 5000', 'danger');
+                loginBtn.innerHTML = originalText;
+                loginBtn.disabled = false;
+            }
+        }
+        
+        function showMessage(msg, type) {
+            const messageDiv = document.getElementById('message');
+            messageDiv.innerHTML = `
+                <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+                    <i class="fas ${type === 'success' ? 'fa-check-circle' : (type === 'danger' ? 'fa-exclamation-circle' : 'fa-info-circle')} me-2"></i>
+                    ${msg}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            `;
+            
+            // Auto hide after 5 seconds for success messages
+            if (type === 'success') {
+                setTimeout(() => {
+                    const alert = messageDiv.querySelector('.alert');
+                    if (alert) alert.remove();
+                }, 3000);
+            }
+        }
+        
+        // Handle form submission
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            await login(email, password);
+        });
+        
+        // Check backend status on page load
+        checkBackendStatus();
+        
+        // Clear any existing tokens on page load (optional - for fresh start)
+        // localStorage.removeItem('allminds_token');
+        // localStorage.removeItem('allminds_user');
+    </script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
