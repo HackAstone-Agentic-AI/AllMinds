@@ -1,6 +1,9 @@
 truststore
 fastapi
 uvicorn
+pydantic
+sqlalchemy
+psycopg2-binary
 langchain
 langchain-groq
 langchain-google-genai
@@ -8,11 +11,9 @@ langchain-core
 langchain-community
 langchain-text-splitters
 langchain-huggingface
-langgraph
 google-api-python-client
 google-auth-httplib2
 google-auth-oauthlib
 python-dotenv
-matplotlib
 chromadb
 pypdf
