@@ -164,10 +164,17 @@ def lesson_planner_agent(state: dict) -> dict:
             "status": "error",
         }
 
+    rag_context = state.get("rag_context", "").strip()
+    rag_section = (
+        f"\n\nCURRICULUM CONTEXT (from DCAPS — use this to ground the lesson in the formal curriculum):\n{rag_context}"
+        if rag_context else ""
+    )
+
     user_message = (
         f"Please create a lesson plan for the following topic:\n\n"
         f"TOPIC: {topic}"
         f"{context_note}"
+        f"{rag_section}"
     )
 
     response = llm.invoke([
