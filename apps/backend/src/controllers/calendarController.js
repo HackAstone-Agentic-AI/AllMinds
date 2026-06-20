@@ -55,6 +55,8 @@ function parseState(state) {
     }
 }
 
+const HTTPS_TIMEOUT_MS = 10_000;
+
 function httpsPost(url, body) {
     return new Promise((resolve, reject) => {
         const parsed = new URL(url);
@@ -67,6 +69,7 @@ function httpsPost(url, body) {
                 'Content-Type': 'application/x-www-form-urlencoded',
                 'Content-Length': Buffer.byteLength(postData),
             },
+            timeout: HTTPS_TIMEOUT_MS,
         };
         const req = https.request(options, (res) => {
             let data = '';
@@ -79,13 +82,14 @@ function httpsPost(url, body) {
                 }
             });
         });
+        req.on('timeout', () => req.destroy(new Error('Google token exchange timed out')));
         req.on('error', reject);
         req.write(postData);
         req.end();
     });
 }
 
-function httpsGet(url, accessToken) {
+function httpsGet(url, accessToken, redirectsLeft = 3) {
     return new Promise((resolve, reject) => {
         const parsed = new URL(url);
         const options = {
@@ -93,18 +97,26 @@ function httpsGet(url, accessToken) {
             path: parsed.pathname + parsed.search,
             method: 'GET',
             headers: { Authorization: `Bearer ${accessToken}` },
+            timeout: HTTPS_TIMEOUT_MS,
         };
         const req = https.request(options, (res) => {
+            const { statusCode, headers } = res;
+            if ([301, 302, 307, 308].includes(statusCode) && headers.location && redirectsLeft > 0) {
+                res.resume(); // discard redirect body
+                httpsGet(headers.location, accessToken, redirectsLeft - 1).then(resolve, reject);
+                return;
+            }
             let data = '';
             res.on('data', (chunk) => (data += chunk));
             res.on('end', () => {
                 try {
-                    resolve({ statusCode: res.statusCode, body: JSON.parse(data) });
+                    resolve({ statusCode, body: JSON.parse(data) });
                 } catch {
                     reject(new Error('Invalid JSON from Google'));
                 }
             });
         });
+        req.on('timeout', () => req.destroy(new Error('Google userinfo request timed out')));
         req.on('error', reject);
         req.end();
     });

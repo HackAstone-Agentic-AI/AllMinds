@@ -107,7 +107,7 @@ const voteStrategy = async (req, res) => {
         await client.query('BEGIN');
 
         const insertResult = await client.query(
-            'INSERT INTO strategy_votes (strategy_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+            'INSERT INTO strategy_votes (strategy_id, user_id) VALUES ($1, $2) ON CONFLICT ON CONSTRAINT strategy_votes_strategy_user_unique DO NOTHING',
             [id, userId]
         );
 

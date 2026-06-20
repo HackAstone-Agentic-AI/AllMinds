@@ -39,9 +39,17 @@ export default function AgentChat() {
     setLoading(true);
 
     try {
-      const threadId =
-        (typeof window !== 'undefined' && localStorage.getItem('allminds_user')) ||
-        'default_user';
+      const threadId = (() => {
+        if (typeof window === 'undefined') return 'default_user';
+        try {
+          const raw = localStorage.getItem('allminds_user');
+          if (!raw) return 'default_user';
+          const parsed = JSON.parse(raw) as { id?: unknown };
+          return parsed?.id ? String(parsed.id) : 'default_user';
+        } catch {
+          return 'default_user';
+        }
+      })();
       const languagePref =
         (typeof window !== 'undefined' && localStorage.getItem('allminds_language')) ||
         'en';

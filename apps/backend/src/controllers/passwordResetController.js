@@ -77,7 +77,7 @@ const resetPassword = async (req, res) => {
             return res.status(400).json({ error: 'Token has expired' });
         }
 
-        // Delete the token first — prevents reuse even if password update fails
+        // Delete the token; if the UPDATE below fails the transaction rolls back and the token is restored
         await client.query('DELETE FROM password_reset_tokens WHERE token = $1', [tokenHash]);
 
         const hashedPassword = await bcrypt.hash(new_password, 10);

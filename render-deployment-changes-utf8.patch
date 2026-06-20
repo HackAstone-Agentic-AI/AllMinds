@@ -1,0 +1,591 @@
+From 6c480794b36f3199f27fb535bfd1b2f6319fccc9 Mon Sep 17 00:00:00 2001
+From: Sifiso-xx <sfisokuhlemavundla2811@gmail.com>
+Date: Sat, 20 Jun 2026 21:16:26 +0200
+Subject: [PATCH 1/2] Add Render deployment configuration
+
+---
+ README.md                              |  13 +++
+ apps/agents/main.py                    |   5 +-
+ apps/backend/package.json              |   4 +-
+ apps/backend/scripts/db.js             |  37 ++++++++
+ apps/backend/scripts/init-db.js        |  36 ++++++++
+ apps/backend/scripts/run-migrations.js |  59 +++++++++++++
+ apps/backend/src/app.js                |  18 +++-
+ apps/backend/src/config/database.js    |  22 +++--
+ apps/backend/src/config/env.js         |  13 ++-
+ docs/DEPLOYMENT_RENDER.md              | 105 ++++++++++++++++++++++
+ render.yaml                            | 115 +++++++++++++++++++++++++
+ 11 files changed, 411 insertions(+), 16 deletions(-)
+ create mode 100644 apps/backend/scripts/db.js
+ create mode 100644 apps/backend/scripts/init-db.js
+ create mode 100644 apps/backend/scripts/run-migrations.js
+ create mode 100644 docs/DEPLOYMENT_RENDER.md
+ create mode 100644 render.yaml
+
+diff --git a/README.md b/README.md
+index 0515209..9aa2984 100644
+--- a/README.md
++++ b/README.md
+@@ -30,6 +30,19 @@ AllMinds/
+ 
+ ---
+ 
++## Render Deployment
++
++Render deployment is configured by the root `render.yaml` Blueprint. It creates:
++
++- `allminds-frontend`
++- `allminds-backend`
++- `allminds-agents`
++- `allminds-postgres`
++
++See `docs/DEPLOYMENT_RENDER.md` before deploying. It includes the required Render secrets, first-deploy `onrender.com` URLs, custom domain updates, database migration flow, and Google OAuth callback URLs.
++
++---
++
+ ## What Was Built and Changed
+ 
+ ### Agents Service (`apps/agents`)
+diff --git a/apps/agents/main.py b/apps/agents/main.py
+index 0adb7ac..89dcc8f 100644
+--- a/apps/agents/main.py
++++ b/apps/agents/main.py
+@@ -1,6 +1,7 @@
+ import truststore
+ truststore.inject_into_ssl()
+ 
++import os
+ import uvicorn
+ from dotenv import load_dotenv
+ from pathlib import Path
+@@ -11,4 +12,6 @@ load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+ 
+ 
+ if __name__ == "__main__":
+-    uvicorn.run("app.api.index:app", host="0.0.0.0", port=8000, reload=False)
++    port = int(os.getenv("PORT", "8000"))
++    reload = os.getenv("ENVIRONMENT", "development") != "production"
++    uvicorn.run("app.api.index:app", host="0.0.0.0", port=port, reload=reload)
+diff --git a/apps/backend/package.json b/apps/backend/package.json
+index 4341b82..58850f4 100644
+--- a/apps/backend/package.json
++++ b/apps/backend/package.json
+@@ -5,7 +5,9 @@
+   "main": "server.js",
+   "scripts": {
+     "start": "node server.js",
+-    "dev": "nodemon server.js"
++    "dev": "nodemon server.js",
++    "db:init": "node scripts/init-db.js",
++    "db:migrate": "node scripts/run-migrations.js"
+   },
+   "dependencies": {
+     "bcrypt": "^5.1.1",
+diff --git a/apps/backend/scripts/db.js b/apps/backend/scripts/db.js
+new file mode 100644
+index 0000000..7998f87
+--- /dev/null
++++ b/apps/backend/scripts/db.js
+@@ -0,0 +1,37 @@
++const fs = require('fs');
++const path = require('path');
++const { Pool } = require('pg');
++require('dotenv').config({ path: path.resolve(__dirname, '../../../.env') });
++
++const pool = new Pool(
++    process.env.DATABASE_URL
++        ? {
++            connectionString: process.env.DATABASE_URL,
++            ssl:
++                process.env.DATABASE_SSL === 'false'
++                    ? false
++                    : { rejectUnauthorized: false },
++        }
++        : {
++            host: process.env.DB_HOST,
++            port: process.env.DB_PORT,
++            user: process.env.DB_USER,
++            password: process.env.DB_PASSWORD,
++            database: process.env.DB_NAME,
++        }
++);
++
++const runSqlFile = async (client, filePath) => {
++    const sql = fs.readFileSync(filePath, 'utf8');
++    if (sql.trim()) {
++        await client.query(sql);
++    }
++};
++
++const closePool = () => pool.end();
++
++module.exports = {
++    pool,
++    runSqlFile,
++    closePool,
++};
+diff --git a/apps/backend/scripts/init-db.js b/apps/backend/scripts/init-db.js
+new file mode 100644
+index 0000000..a9e65a0
+--- /dev/null
++++ b/apps/backend/scripts/init-db.js
+@@ -0,0 +1,36 @@
++const path = require('path');
++const { pool, runSqlFile, closePool } = require('./db');
++
++const schemaPath = path.resolve(__dirname, '../../../docs/database/allminds_complete_schema.sql');
++
++const initDb = async () => {
++    const client = await pool.connect();
++    try {
++        const result = await client.query(`
++            SELECT EXISTS (
++                SELECT 1
++                FROM information_schema.tables
++                WHERE table_schema = 'public'
++                AND table_name = 'users'
++            ) AS exists
++        `);
++
++        if (result.rows[0]?.exists) {
++            console.log('Database baseline already exists; skipping schema bootstrap.');
++            return;
++        }
++
++        console.log('Bootstrapping database from docs/database/allminds_complete_schema.sql...');
++        await runSqlFile(client, schemaPath);
++        console.log('Database bootstrap completed.');
++    } finally {
++        client.release();
++    }
++};
++
++initDb()
++    .catch((error) => {
++        console.error('Database bootstrap failed:', error);
++        process.exitCode = 1;
++    })
++    .finally(closePool);
+diff --git a/apps/backend/scripts/run-migrations.js b/apps/backend/scripts/run-migrations.js
+new file mode 100644
+index 0000000..6235690
+--- /dev/null
++++ b/apps/backend/scripts/run-migrations.js
+@@ -0,0 +1,59 @@
++const fs = require('fs');
++const path = require('path');
++const { pool, runSqlFile, closePool } = require('./db');
++
++const migrationsDir = path.resolve(__dirname, '../database/migrations');
++
++const ensureMigrationTable = async (client) => {
++    await client.query(`
++        CREATE TABLE IF NOT EXISTS schema_migrations (
++            filename TEXT PRIMARY KEY,
++            applied_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
++        )
++    `);
++};
++
++const runMigrations = async () => {
++    const client = await pool.connect();
++    try {
++        await ensureMigrationTable(client);
++
++        const files = fs
++            .readdirSync(migrationsDir)
++            .filter((file) => file.endsWith('.sql'))
++            .sort();
++
++        for (const file of files) {
++            const applied = await client.query(
++                'SELECT 1 FROM schema_migrations WHERE filename = $1',
++                [file]
++            );
++
++            if (applied.rows.length > 0) {
++                continue;
++            }
++
++            console.log(`Applying migration ${file}...`);
++            await client.query('BEGIN');
++            await runSqlFile(client, path.join(migrationsDir, file));
++            await client.query(
++                'INSERT INTO schema_migrations (filename) VALUES ($1)',
++                [file]
++            );
++            await client.query('COMMIT');
++            console.log(`Applied migration ${file}.`);
++        }
++    } catch (error) {
++        await client.query('ROLLBACK').catch(() => null);
++        throw error;
++    } finally {
++        client.release();
++    }
++};
++
++runMigrations()
++    .catch((error) => {
++        console.error('Database migration failed:', error);
++        process.exitCode = 1;
++    })
++    .finally(closePool);
+diff --git a/apps/backend/src/app.js b/apps/backend/src/app.js
+index 029a39b..b555f0e 100644
+--- a/apps/backend/src/app.js
++++ b/apps/backend/src/app.js
+@@ -46,7 +46,23 @@ const calendarRoutes = require('./routes/calendarRoutes');
+ const app = express();
+ 
+ // Middleware
+-app.use(cors());
++const allowedOrigins = (process.env.ALLOWED_ORIGINS || process.env.FRONTEND_URL || '')
++    .split(',')
++    .map((origin) => origin.trim())
++    .filter(Boolean);
++
++app.use(
++    cors({
++        origin(origin, callback) {
++            if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
++                callback(null, true);
++                return;
++            }
++            callback(new Error('Not allowed by CORS'));
++        },
++        credentials: true,
++    })
++);
+ app.use(express.json());
+ app.use(express.urlencoded({ extended: true }));
+ app.use(passport.initialize());
+diff --git a/apps/backend/src/config/database.js b/apps/backend/src/config/database.js
+index fee0fa9..2dc797f 100644
+--- a/apps/backend/src/config/database.js
++++ b/apps/backend/src/config/database.js
+@@ -2,12 +2,24 @@ const path = require('path');
+ const { Pool } = require('pg');
+ require('dotenv').config({ path: path.resolve(__dirname, '../../../../.env') });
+ 
++const databaseConfig = process.env.DATABASE_URL
++    ? {
++        connectionString: process.env.DATABASE_URL,
++        ssl:
++            process.env.DATABASE_SSL === 'false'
++                ? false
++                : { rejectUnauthorized: false },
++    }
++    : {
++        host: process.env.DB_HOST,
++        port: process.env.DB_PORT,
++        user: process.env.DB_USER,
++        password: process.env.DB_PASSWORD,
++        database: process.env.DB_NAME,
++    };
++
+ const pool = new Pool({
+-    host: process.env.DB_HOST,
+-    port: process.env.DB_PORT,
+-    user: process.env.DB_USER,
+-    password: process.env.DB_PASSWORD,
+-    database: process.env.DB_NAME,
++    ...databaseConfig,
+     max: 20,
+     idleTimeoutMillis: 30000,
+     connectionTimeoutMillis: 2000,
+diff --git a/apps/backend/src/config/env.js b/apps/backend/src/config/env.js
+index 292247b..7af3b90 100644
+--- a/apps/backend/src/config/env.js
++++ b/apps/backend/src/config/env.js
+@@ -11,14 +11,11 @@ const isPlaceholder = (value = '') => {
+ };
+ 
+ const validateEnv = () => {
+-    const required = [
+-        'DB_HOST',
+-        'DB_PORT',
+-        'DB_USER',
+-        'DB_PASSWORD',
+-        'DB_NAME',
+-        'JWT_SECRET',
+-    ];
++    const required = ['JWT_SECRET'];
++
++    if (isPlaceholder(process.env.DATABASE_URL)) {
++        required.push('DB_HOST', 'DB_PORT', 'DB_USER', 'DB_PASSWORD', 'DB_NAME');
++    }
+ 
+     const missingRequired = required.filter((key) => isPlaceholder(process.env[key]));
+ 
+diff --git a/docs/DEPLOYMENT_RENDER.md b/docs/DEPLOYMENT_RENDER.md
+new file mode 100644
+index 0000000..245d271
+--- /dev/null
++++ b/docs/DEPLOYMENT_RENDER.md
+@@ -0,0 +1,105 @@
++# AllMinds Render Deployment Guide
++
++This repository deploys to Render as three web services plus one Postgres database.
++
++## Services
++
++- `allminds-frontend`: Next.js dashboard
++- `allminds-backend`: Express API
++- `allminds-agents`: FastAPI agent service
++- `allminds-postgres`: Render Postgres database
++
++The root `render.yaml` is the Blueprint file.
++
++## First Deploy URLs
++
++The Blueprint is configured to deploy first with Render subdomains:
++
++- Frontend: `https://allminds-frontend.onrender.com`
++- Backend: `https://allminds-backend.onrender.com`
++- Agents: `https://allminds-agents.onrender.com`
++
++After DNS is connected, replace those values in Render environment variables with your purchased domain values.
++
++Recommended production domain layout:
++
++- Frontend: `https://YOUR_DOMAIN`
++- Backend: `https://api.YOUR_DOMAIN`
++- Agents: `https://agents.YOUR_DOMAIN`
++
++Then update:
++
++- Backend `BACKEND_URL=https://api.YOUR_DOMAIN`
++- Backend `FRONTEND_URL=https://YOUR_DOMAIN`
++- Backend `AGENTIC_AI_URL=https://agents.YOUR_DOMAIN`
++- Backend `ALLOWED_ORIGINS=https://YOUR_DOMAIN`
++- Frontend `NEXT_PUBLIC_API_URL=https://api.YOUR_DOMAIN/api`
++- Frontend `BACKEND_API_URL=https://api.YOUR_DOMAIN/api`
++- Frontend `AGENTIC_AI_URL=https://agents.YOUR_DOMAIN`
++- Agents `ALLOWED_ORIGINS=https://YOUR_DOMAIN`
++
++## Required Render Secrets
++
++Render will prompt for these because `render.yaml` marks them as `sync: false`:
++
++- `GOOGLE_CLIENT_ID`
++- `GOOGLE_CLIENT_SECRET`
++- `GROQ_API_KEY`
++- `GEMINI_API_KEY`
++- `YOUTUBE_API_KEY`
++- Email values if password reset email is needed
++- Microsoft/Apple OAuth values only if those providers are enabled
++
++`JWT_SECRET` is generated automatically by Render.
++
++## Database
++
++The backend pre-deploy command runs:
++
++```bash
++npm run db:init && npm run db:migrate
++```
++
++`db:init` loads `docs/database/allminds_complete_schema.sql` only if the fresh Render database does not yet have a `users` table. `db:migrate` then applies SQL files in `apps/backend/database/migrations`.
++
++## Google OAuth Redirect URIs
++
++For the initial Render subdomain deployment, add these redirect URIs in Google Cloud Console:
++
++```text
++https://allminds-backend.onrender.com/api/auth/google/callback
++https://allminds-backend.onrender.com/api/calendar/callback
++```
++
++For local development, keep:
++
++```text
++http://localhost:5000/api/auth/google/callback
++http://localhost:5000/api/calendar/callback
++```
++
++After the custom domain is connected, also add:
++
++```text
++https://api.YOUR_DOMAIN/api/auth/google/callback
++https://api.YOUR_DOMAIN/api/calendar/callback
++```
++
++## Smoke Checks
++
++After deployment:
++
++```text
++https://allminds-backend.onrender.com/api/health
++https://allminds-agents.onrender.com/health
++https://allminds-frontend.onrender.com
++```
++
++Then test:
++
++1. Register or log in.
++2. Open the dashboard.
++3. Use the Thandi chat widget.
++4. Connect Google Calendar from settings.
++5. Ask: `what's on my calendar`.
++6. Ask: `schedule a test event tomorrow at 9am`.
+diff --git a/render.yaml b/render.yaml
+new file mode 100644
+index 0000000..0cc4f43
+--- /dev/null
++++ b/render.yaml
+@@ -0,0 +1,115 @@
++databases:
++  - name: allminds-postgres
++    databaseName: allminds_db
++    user: allminds
++    plan: basic-256mb
++    region: frankfurt
++
++services:
++  - type: web
++    runtime: node
++    name: allminds-backend
++    rootDir: apps/backend
++    plan: pro
++    region: frankfurt
++    buildCommand: npm install
++    preDeployCommand: npm run db:init && npm run db:migrate
++    startCommand: npm start
++    healthCheckPath: /api/health
++    envVars:
++      - key: NODE_ENV
++        value: production
++      - key: DATABASE_URL
++        fromDatabase:
++          name: allminds-postgres
++          property: connectionString
++      - key: JWT_SECRET
++        generateValue: true
++      - key: JWT_EXPIRES_IN
++        value: 7d
++      - key: BCRYPT_ROUNDS
++        value: 10
++      - key: BACKEND_URL
++        value: https://allminds-backend.onrender.com
++      - key: FRONTEND_URL
++        value: https://allminds-frontend.onrender.com
++      - key: AGENTIC_AI_URL
++        value: https://allminds-agents.onrender.com
++      - key: ALLOWED_ORIGINS
++        value: https://allminds-frontend.onrender.com
++      - key: APP_TIMEZONE
++        value: Africa/Johannesburg
++      - key: GOOGLE_CLIENT_ID
++        sync: false
++      - key: GOOGLE_CLIENT_SECRET
++        sync: false
++      - key: MICROSOFT_CLIENT_ID
++        sync: false
++      - key: MICROSOFT_CLIENT_SECRET
++        sync: false
++      - key: APPLE_CLIENT_ID
++        sync: false
++      - key: APPLE_CLIENT_SECRET
++        sync: false
++      - key: EMAIL_HOST
++        sync: false
++      - key: EMAIL_PORT
++        value: 587
++      - key: EMAIL_SECURE
++        value: false
++      - key: EMAIL_USER
++        sync: false
++      - key: EMAIL_PASS
++        sync: false
++      - key: EMAIL_FROM
++        sync: false
++
++  - type: web
++    runtime: python
++    name: allminds-agents
++    rootDir: apps/agents
++    plan: pro
++    region: frankfurt
++    buildCommand: pip install -r requirements.txt
++    startCommand: uvicorn app.api.index:app --host 0.0.0.0 --port $PORT
++    healthCheckPath: /health
++    envVars:
++      - key: ENVIRONMENT
++        value: production
++      - key: DATABASE_URL
++        fromDatabase:
++          name: allminds-postgres
++          property: connectionString
++      - key: ALLOWED_ORIGINS
++        value: https://allminds-frontend.onrender.com
++      - key: APP_TIMEZONE
++        value: Africa/Johannesburg
++      - key: GOOGLE_CLIENT_ID
++        sync: false
++      - key: GOOGLE_CLIENT_SECRET
++        sync: false
++      - key: GROQ_API_KEY
++        sync: false
++      - key: GEMINI_API_KEY
++        sync: false
++      - key: YOUTUBE_API_KEY
++        sync: false
++
++  - type: web
++    runtime: node
++    name: allminds-frontend
++    rootDir: apps/frontend
++    plan: pro
++    region: frankfurt
++    buildCommand: npm install && npm run build
++    startCommand: npm start
++    healthCheckPath: /
++    envVars:
++      - key: NODE_ENV
++        value: production
++      - key: NEXT_PUBLIC_API_URL
++        value: https://allminds-backend.onrender.com/api
++      - key: BACKEND_API_URL
++        value: https://allminds-backend.onrender.com/api
++      - key: AGENTIC_AI_URL
++        value: https://allminds-agents.onrender.com
+-- 
+2.53.0.windows.1
+
+
+From b896061ae2c99a6833e5fdc45a5e5093b1654832 Mon Sep 17 00:00:00 2001
+From: Sifiso-xx <sfisokuhlemavundla2811@gmail.com>
+Date: Sat, 20 Jun 2026 21:19:44 +0200
+Subject: [PATCH 2/2] Remove local Google credentials file
+
+---
+ .gitignore                       | 2 ++
+ apps/agents/app/Credentials.json | 1 -
+ 2 files changed, 2 insertions(+), 1 deletion(-)
+ delete mode 100644 apps/agents/app/Credentials.json
+
+diff --git a/.gitignore b/.gitignore
+index 1d5fe7e..d20e8e4 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -27,6 +27,8 @@ vector_db/
+ .codex/
+ .runlogs/
+ token.pickle
++Credentials.json
++credentials.json
+ *.log
+ npm-debug.log*
+ yarn-debug.log*
+diff --git a/apps/agents/app/Credentials.json b/apps/agents/app/Credentials.json
+deleted file mode 100644
+index 8ded859..0000000
+--- a/apps/agents/app/Credentials.json
++++ /dev/null
+@@ -1 +0,0 @@
+-{"installed":{"client_id":"186060727538-kvpe6v0a2qgoel4llicc5cf5h607epb5.apps.googleusercontent.com","project_id":"hackastone1","auth_uri":"https://accounts.google.com/o/oauth2/auth","token_uri":"https://oauth2.googleapis.com/token","auth_provider_x509_cert_url":"https://www.googleapis.com/oauth2/v1/certs","client_secret":"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","redirect_uris":["http://localhost"]}}
+\ No newline at end of file
+-- 
+2.53.0.windows.1
+

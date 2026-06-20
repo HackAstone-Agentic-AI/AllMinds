@@ -62,7 +62,7 @@ const bulkCreateLearners = async (req, res) => {
             const insertResult = await pool.query(`
                 INSERT INTO learner_profiles (teacher_id, anonymous_id, profile_data)
                 VALUES ($1, $2, $3)
-                ON CONFLICT (teacher_id, anonymous_id) DO NOTHING
+                ON CONFLICT ON CONSTRAINT learner_profiles_teacher_anonymous_unique DO NOTHING
             `, [teacherId, anonymousId, profileData || {}]);
             insertedCount += insertResult.rowCount;
         }
