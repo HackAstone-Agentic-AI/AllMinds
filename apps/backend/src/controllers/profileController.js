@@ -6,6 +6,7 @@ const getProfile = async (req, res) => {
     try {
         const result = await pool.query(`
             SELECT u.id, u.email, u.full_name, u.school_name, u.province, u.city,
+                   u.language_pref,
                    tp.title, tp.name, tp.surname, tp.theme_preference
             FROM users u
             LEFT JOIN teacher_profiles tp ON u.id = tp.user_id
@@ -22,10 +23,12 @@ const getProfile = async (req, res) => {
 // Update teacher profile
 const updateProfile = async (req, res) => {
     const userId = req.user.id;
-    const { title, name, surname, theme_preference } = req.body;
+    const { title, name, surname, theme_preference, language_pref } = req.body;
+    const client = await pool.connect();
     try {
-        // Upsert into teacher_profiles
-        await pool.query(`
+        await client.query('BEGIN');
+
+        await client.query(`
             INSERT INTO teacher_profiles (user_id, title, name, surname, theme_preference)
             VALUES ($1, $2, $3, $4, $5)
             ON CONFLICT (user_id) DO UPDATE SET
@@ -35,10 +38,22 @@ const updateProfile = async (req, res) => {
                 theme_preference = EXCLUDED.theme_preference,
                 updated_at = CURRENT_TIMESTAMP
         `, [userId, title, name, surname, theme_preference]);
+
+        if (language_pref !== undefined) {
+            await client.query(
+                'UPDATE users SET language_pref = $1 WHERE id = $2',
+                [language_pref, userId]
+            );
+        }
+
+        await client.query('COMMIT');
         res.json({ message: 'Profile updated successfully' });
     } catch (err) {
+        await client.query('ROLLBACK');
         console.error(err);
         res.status(500).json({ error: 'Failed to update profile' });
+    } finally {
+        client.release();
     }
 };
 

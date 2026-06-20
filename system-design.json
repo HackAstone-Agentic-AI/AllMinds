@@ -1,0 +1,824 @@
+{
+  "system": {
+    "name": "AllMinds",
+    "version": "1.0.0",
+    "purpose": "Neurodivergent-affirming teacher platform supporting educators working with children (ages 3–10) who have ADHD, autism spectrum, dyslexia, dyscalculia, sensory processing differences, PDA profile, and twice-exceptional profiles. Provides classroom strategies, AI-powered guidance, community collaboration, and professional development resources.",
+    "repository": "Back-end-front-end-database/AllMinds",
+    "timezone": "Africa/Johannesburg"
+  },
+
+  "architecture": {
+    "pattern": "Distributed Monorepo (3-service)",
+    "services": [
+      {
+        "name": "frontend",
+        "framework": "Next.js 13 (App Router)",
+        "port": 3000,
+        "path": "apps/frontend",
+        "description": "Teacher-facing dashboard and all UI pages"
+      },
+      {
+        "name": "backend",
+        "framework": "Express.js",
+        "port": 5000,
+        "path": "apps/backend",
+        "description": "REST API, authentication, business logic, PostgreSQL access"
+      },
+      {
+        "name": "agents",
+        "framework": "FastAPI (Python)",
+        "port": 8000,
+        "path": "apps/agents",
+        "description": "Multi-agent AI teaching companion (Supervisor + 6 Worker agents)"
+      }
+    ],
+    "data_stores": [
+      {
+        "name": "PostgreSQL",
+        "port": 5432,
+        "database": "allminds_db",
+        "description": "Primary relational database — all user, learner, task, and community data"
+      },
+      {
+        "name": "ChromaDB",
+        "type": "vector",
+        "path": "apps/agents/vector_db",
+        "description": "Local vector store for RAG over curriculum documents"
+      },
+      {
+        "name": "SQLite",
+        "file": "apps/agents/thandi_memory.sqlite",
+        "description": "Conversation memory persistence for Thandi AI chat threads"
+      }
+    ],
+    "request_flow": [
+      "Browser sends request to Next.js frontend (port 3000)",
+      "Frontend calls Express backend API via NEXT_PUBLIC_API_URL (port 5000)",
+      "For AI chat, Next.js proxies POST /api/agent/chat → FastAPI /chat (port 8000)",
+      "Express backend queries PostgreSQL for data operations",
+      "FastAPI agents query Groq (supervisor), Gemini (workers), ChromaDB (RAG), SQLite (memory)"
+    ]
+  },
+
+  "tech_stack": {
+    "frontend": {
+      "framework": "Next.js",
+      "version": "13.5.1",
+      "language": "TypeScript 5.2.2",
+      "ui_library": "React 18.2.0",
+      "styling": "Tailwind CSS 3.3.3",
+      "icons": "lucide-react 1.0.1",
+      "export": ["jsPDF 4.2.1", "xlsx 0.18.5"],
+      "api_client": "Custom fetch wrapper (lib/api.ts)"
+    },
+    "backend": {
+      "runtime": "Node.js 18+",
+      "framework": "Express.js 4.18.2",
+      "database_client": "pg (node-postgres)",
+      "auth": {
+        "jwt": "jsonwebtoken 9.0.2",
+        "password": "bcrypt 5.1.1",
+        "oauth": "Passport.js 0.7.0"
+      },
+      "email": "Nodemailer 8.0.5",
+      "file_upload": "multer"
+    },
+    "agents": {
+      "runtime": "Python 3.11+",
+      "framework": "FastAPI",
+      "server": "Uvicorn",
+      "llm_orchestration": "LangChain",
+      "agent_state": "LangGraph",
+      "supervisor_llm": "Groq (llama-3.3-70b-versatile)",
+      "worker_llm": "Google Gemini 2.5-flash",
+      "vector_db": "ChromaDB",
+      "embeddings": "HuggingFace (sentence-transformers)"
+    }
+  },
+
+  "authentication": {
+    "primary_method": "JWT (JSON Web Tokens)",
+    "token_expiry": "7d",
+    "storage": "localStorage (key: allminds_token)",
+    "header": "Authorization: Bearer <token>",
+    "password_hashing": "bcrypt (10 rounds)",
+    "roles": ["teacher", "admin"],
+    "middleware": {
+      "authenticateToken": "Applied to all protected routes",
+      "authorizeAdmin": "Applied to admin-only routes"
+    },
+    "oauth_providers": [
+      {
+        "provider": "Google",
+        "scopes": ["profile", "email"],
+        "env_vars": ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
+        "routes": ["/api/auth/google", "/api/auth/google/callback"]
+      },
+      {
+        "provider": "Microsoft",
+        "scopes": ["openid", "profile", "email", "User.Read"],
+        "env_vars": ["MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET"],
+        "routes": ["/api/auth/microsoft", "/api/auth/microsoft/callback"]
+      },
+      {
+        "provider": "Apple",
+        "scopes": ["name", "email"],
+        "env_vars": ["APPLE_CLIENT_ID", "APPLE_CLIENT_SECRET"],
+        "routes": ["/api/auth/apple", "/api/auth/apple/callback"]
+      }
+    ],
+    "oauth_callback_pattern": "${FRONTEND_URL}/oauth-callback?token=...&user=...",
+    "graceful_degradation": "OAuth providers disabled with clear error if env vars missing"
+  },
+
+  "database": {
+    "engine": "PostgreSQL 12+",
+    "name": "allminds_db",
+    "migrations_path": "apps/backend/database/migrations",
+    "tables": [
+      {
+        "name": "users",
+        "purpose": "Core teacher accounts",
+        "columns": ["id", "email", "password_hash", "full_name", "role", "school_name", "province", "city", "phone", "language_pref", "is_active", "created_at", "updated_at"],
+        "indexes": ["email", "role"],
+        "triggers": ["auto-update updated_at on row change"]
+      },
+      {
+        "name": "teacher_profiles",
+        "purpose": "Extended teacher metadata (1:1 with users)",
+        "columns": ["id", "user_id", "title", "name", "surname", "theme_preference", "created_at", "updated_at"],
+        "unique_constraints": ["user_id"]
+      },
+      {
+        "name": "schools",
+        "purpose": "School organisations",
+        "columns": ["id", "name", "province", "city", "address", "contact_email", "contact_phone", "subscription_status", "created_at"]
+      },
+      {
+        "name": "classes",
+        "purpose": "Class groups within schools",
+        "columns": ["id", "school_id", "class_name", "grade_level", "academic_year", "is_active", "created_at"],
+        "foreign_keys": ["school_id → schools.id"]
+      },
+      {
+        "name": "teacher_classes",
+        "purpose": "Many-to-many bridge: teachers ↔ classes",
+        "columns": ["id", "teacher_id", "class_id", "assigned_at"],
+        "unique_constraints": ["(teacher_id, class_id)"],
+        "foreign_keys": ["teacher_id → users.id", "class_id → classes.id"]
+      },
+      {
+        "name": "learners",
+        "purpose": "Individual learner records (pseudonymized)",
+        "columns": ["id", "class_id", "pseudonym", "age_years", "support_needs", "successful_strategies", "created_at"],
+        "foreign_keys": ["class_id → classes.id"]
+      },
+      {
+        "name": "learner_profiles",
+        "purpose": "Flexible per-teacher learner profiles (JSONB)",
+        "columns": ["id", "teacher_id", "anonymous_id", "profile_data (JSONB)", "created_at", "updated_at"],
+        "unique_constraints": ["anonymous_id"],
+        "indexes": ["teacher_id"],
+        "foreign_keys": ["teacher_id → users.id"],
+        "notes": "profile_data stores support needs, strategies, and other structured data as JSON"
+      },
+      {
+        "name": "sensory_toolkit_logs",
+        "purpose": "Log sensory behaviors and responses per learner",
+        "columns": ["id", "learner_id", "teacher_id", "log_data (JSONB)", "logged_at"],
+        "indexes": ["learner_id"],
+        "log_data_fields": ["trigger", "behavior", "response", "notes"]
+      },
+      {
+        "name": "learner_progress",
+        "purpose": "Periodic progress snapshots per learner",
+        "columns": ["id", "learner_id", "teacher_id", "progress_data (JSONB)", "recorded_at"],
+        "indexes": ["learner_id"],
+        "progress_data_fields": ["area", "level", "achievements", "engagement", "attendance", "task_completion", "ai_suggestions"]
+      },
+      {
+        "name": "curriculum_documents",
+        "purpose": "Uploaded PDFs/docs for RAG integration",
+        "columns": ["id", "school_id", "uploaded_by", "title", "document_type", "grade_level", "subject", "file_path", "file_size", "extracted_text", "uploaded_at"],
+        "foreign_keys": ["school_id → schools.id", "uploaded_by → users.id"]
+      },
+      {
+        "name": "community_strategies",
+        "purpose": "Teacher-submitted classroom strategies",
+        "columns": ["id", "user_id", "title", "challenge_type", "description", "grade_level", "materials_needed", "helpful_count", "is_approved", "created_at"],
+        "indexes": ["challenge_type"],
+        "foreign_keys": ["user_id → users.id"]
+      },
+      {
+        "name": "strategy_votes",
+        "purpose": "Tracks which teachers voted a strategy helpful",
+        "columns": ["id", "strategy_id", "user_id", "voted_at"],
+        "unique_constraints": ["(strategy_id, user_id)"],
+        "foreign_keys": ["strategy_id → community_strategies.id", "user_id → users.id"]
+      },
+      {
+        "name": "ngos",
+        "purpose": "NGOs and therapy service providers",
+        "columns": ["id", "name", "province", "city", "address", "latitude", "longitude", "services (TEXT[])", "contact_phone", "contact_email", "website", "rating", "verified", "created_at"],
+        "indexes": ["province"]
+      },
+      {
+        "name": "ngo_reviews",
+        "purpose": "Teacher reviews and ratings of NGOs",
+        "columns": ["id", "ngo_id", "user_id", "rating", "comment", "created_at"],
+        "check_constraints": ["rating BETWEEN 1 AND 5"],
+        "foreign_keys": ["ngo_id → ngos.id", "user_id → users.id"]
+      },
+      {
+        "name": "lesson_plans",
+        "purpose": "Stored AI-generated or manual lesson plans",
+        "columns": ["id", "teacher_id", "title", "content", "created_at"],
+        "indexes": ["teacher_id"],
+        "foreign_keys": ["teacher_id → users.id"]
+      },
+      {
+        "name": "lesson_history",
+        "purpose": "Log of lesson generation requests with ratings",
+        "columns": ["id", "user_id", "topic", "grade_level", "adaptation_needs", "generated_lesson", "rating", "created_at"],
+        "foreign_keys": ["user_id → users.id"]
+      },
+      {
+        "name": "teacher_tasks",
+        "purpose": "Teacher to-do list with priority and status",
+        "columns": ["id", "teacher_id", "title", "description", "status", "priority", "due_date", "created_at", "updated_at"],
+        "indexes": ["teacher_id", "status", "due_date"],
+        "status_values": ["pending", "in_progress", "completed"],
+        "priority_values": ["low", "medium", "high"],
+        "foreign_keys": ["teacher_id → users.id"]
+      },
+      {
+        "name": "activities",
+        "purpose": "Audit trail of all teacher actions",
+        "columns": ["id", "teacher_id", "activity_type", "description", "created_at"],
+        "indexes": ["teacher_id"],
+        "foreign_keys": ["teacher_id → users.id"]
+      },
+      {
+        "name": "forum_posts",
+        "purpose": "Community discussion posts (public read)",
+        "columns": ["id", "teacher_id", "title", "content", "created_at"],
+        "indexes": ["created_at"],
+        "foreign_keys": ["teacher_id → users.id"]
+      },
+      {
+        "name": "parent_communications",
+        "purpose": "Teacher messages to parents (progress or concern)",
+        "columns": ["id", "teacher_id", "learner_id", "type", "content", "created_at"],
+        "indexes": ["teacher_id"],
+        "type_values": ["progress", "concern"],
+        "foreign_keys": ["teacher_id → users.id"]
+      },
+      {
+        "name": "password_reset_tokens",
+        "purpose": "Time-limited tokens for password reset flow",
+        "columns": ["id", "user_id", "token", "expires_at", "created_at"],
+        "unique_constraints": ["token"],
+        "foreign_keys": ["user_id → users.id"]
+      },
+      {
+        "name": "calendar_tokens",
+        "purpose": "Stores Google Calendar OAuth tokens per teacher",
+        "columns": ["id", "user_id", "gmail_email", "token_data (JSONB)", "created_at", "updated_at"],
+        "unique_constraints": ["user_id"],
+        "foreign_keys": ["user_id → users.id"]
+      }
+    ],
+    "seed_data": {
+      "schools": 1,
+      "teachers": 1,
+      "classes": 1,
+      "learners": 2,
+      "learner_profiles": 2,
+      "ngos": 3,
+      "community_strategies": 2,
+      "lesson_plans": 2,
+      "tasks": 3,
+      "forum_posts": 1,
+      "parent_communications": 2,
+      "sensory_logs": 1
+    }
+  },
+
+  "api_endpoints": {
+    "base_url": "${BACKEND_URL}/api",
+    "routes": {
+      "auth": {
+        "prefix": "/auth",
+        "endpoints": [
+          { "method": "POST", "path": "/register", "auth": false, "description": "Register new teacher account (email, password, full name, title, surname, role, school, province, city, phone, language_pref)" },
+          { "method": "POST", "path": "/login", "auth": false, "description": "Login with email + password, returns JWT" },
+          { "method": "GET", "path": "/profile", "auth": true, "description": "Get current authenticated user's profile" },
+          { "method": "POST", "path": "/forgot-password", "auth": false, "description": "Request password reset email" },
+          { "method": "POST", "path": "/reset-password", "auth": false, "description": "Reset password using token from email" },
+          { "method": "GET", "path": "/google", "auth": false, "description": "Initiate Google OAuth flow" },
+          { "method": "GET", "path": "/google/callback", "auth": false, "description": "Google OAuth callback" },
+          { "method": "GET", "path": "/microsoft", "auth": false, "description": "Initiate Microsoft OAuth flow" },
+          { "method": "GET", "path": "/microsoft/callback", "auth": false, "description": "Microsoft OAuth callback" },
+          { "method": "GET", "path": "/apple", "auth": false, "description": "Initiate Apple OAuth flow" },
+          { "method": "ALL", "path": "/apple/callback", "auth": false, "description": "Apple OAuth callback" }
+        ]
+      },
+      "profile": {
+        "prefix": "/profile",
+        "endpoints": [
+          { "method": "GET", "path": "/", "auth": true, "description": "Get teacher profile (title, name, surname, theme)" },
+          { "method": "PUT", "path": "/", "auth": true, "description": "Update teacher profile" }
+        ]
+      },
+      "learners": {
+        "prefix": "/learners",
+        "endpoints": [
+          { "method": "GET", "path": "/", "auth": true, "description": "List all learner profiles for current teacher" },
+          { "method": "POST", "path": "/", "auth": true, "description": "Create a single learner profile" },
+          { "method": "POST", "path": "/bulk", "auth": true, "description": "Bulk import learners from CSV data" },
+          { "method": "GET", "path": "/:learnerId/sensory-logs", "auth": true, "description": "Get all sensory behavior logs for a learner" },
+          { "method": "POST", "path": "/:learnerId/sensory-logs", "auth": true, "description": "Log a sensory event (trigger, behavior, response, notes)" },
+          { "method": "GET", "path": "/:learnerId/progress", "auth": true, "description": "Get all progress records for a learner" },
+          { "method": "POST", "path": "/:learnerId/progress", "auth": true, "description": "Record a progress entry (area, level, achievements, engagement, attendance, task_completion, ai_suggestions)" }
+        ]
+      },
+      "forum": {
+        "prefix": "/forum",
+        "endpoints": [
+          { "method": "GET", "path": "/", "auth": false, "description": "Get all forum posts (public)" },
+          { "method": "POST", "path": "/", "auth": true, "description": "Create a new forum discussion post (title + content)" }
+        ]
+      },
+      "parent_communications": {
+        "prefix": "/parent-communications",
+        "endpoints": [
+          { "method": "GET", "path": "/", "auth": true, "description": "Get communications for teacher's learners" },
+          { "method": "POST", "path": "/", "auth": true, "description": "Create progress or concern message for a learner" }
+        ]
+      },
+      "activities": {
+        "prefix": "/activities",
+        "endpoints": [
+          { "method": "GET", "path": "/activities", "auth": true, "description": "Get recent activity audit log" },
+          { "method": "GET", "path": "/lesson-plans", "auth": true, "description": "Get teacher's lesson plans" },
+          { "method": "GET", "path": "/tasks", "auth": true, "description": "Get teacher's task list" },
+          { "method": "POST", "path": "/tasks", "auth": true, "description": "Create new task (title, description, priority, due_date)" },
+          { "method": "PATCH", "path": "/tasks/:taskId", "auth": true, "description": "Update task status, priority, or due_date" }
+        ]
+      },
+      "calendar": {
+        "prefix": "/calendar",
+        "endpoints": [
+          { "method": "GET", "path": "/connect", "auth": true, "description": "Redirect teacher to Google OAuth for calendar access" },
+          { "method": "GET", "path": "/callback", "auth": false, "description": "Handle Google Calendar OAuth callback and store tokens" },
+          { "method": "GET", "path": "/status", "auth": true, "description": "Check if teacher has a connected Google Calendar" },
+          { "method": "DELETE", "path": "/disconnect", "auth": true, "description": "Remove Google Calendar integration for teacher" }
+        ]
+      },
+      "agent": {
+        "prefix": "/agent",
+        "endpoints": [
+          { "method": "POST", "path": "/chat", "auth": false, "description": "Proxy chat message to FastAPI AI agents service", "proxies_to": "http://127.0.0.1:8000/chat" }
+        ]
+      },
+      "strategies": {
+        "prefix": "/strategies",
+        "endpoints": [
+          { "method": "GET", "path": "/", "auth": false, "description": "Get all approved community strategies" },
+          { "method": "GET", "path": "/:id", "auth": false, "description": "Get single strategy details" },
+          { "method": "POST", "path": "/", "auth": true, "description": "Submit a new strategy (title, challenge_type, description, grade_level, materials_needed)" },
+          { "method": "POST", "path": "/:id/vote", "auth": true, "description": "Vote a strategy as helpful (deduplicated per user)" }
+        ]
+      },
+      "ngos": {
+        "prefix": "/ngos",
+        "endpoints": [
+          { "method": "GET", "path": "/", "auth": false, "description": "Get all verified NGO/therapy service listings" },
+          { "method": "GET", "path": "/:id", "auth": false, "description": "Get individual NGO details" },
+          { "method": "POST", "path": "/:id/review", "auth": true, "description": "Submit rating (1–5) and comment for an NGO" }
+        ]
+      },
+      "school": {
+        "prefix": "/school",
+        "auth_required": "admin role",
+        "endpoints": [
+          { "method": "GET", "path": "/classes", "auth": "admin", "description": "Get all classes in school" },
+          { "method": "POST", "path": "/classes", "auth": "admin", "description": "Create a new class" },
+          { "method": "GET", "path": "/teachers", "auth": "admin", "description": "Get all registered teachers" },
+          { "method": "POST", "path": "/assign-teacher", "auth": "admin", "description": "Assign a teacher to a class" },
+          { "method": "GET", "path": "/classes/:class_id/learners", "auth": "admin", "description": "Get all learners in a class" },
+          { "method": "POST", "path": "/learners", "auth": "admin", "description": "Create learner(s) in bulk" },
+          { "method": "POST", "path": "/documents/upload", "auth": "admin", "description": "Upload a curriculum document (PDF/multipart)" },
+          { "method": "GET", "path": "/documents", "auth": "admin", "description": "Get all uploaded curriculum documents" }
+        ]
+      },
+      "stats": {
+        "prefix": "/stats",
+        "endpoints": [
+          { "method": "GET", "path": "/admin", "auth": true, "description": "Admin dashboard aggregates (total teachers, learners, posts, strategies)" },
+          { "method": "GET", "path": "/teacher", "auth": true, "description": "Per-teacher stats (learner count, tasks, recent progress)" }
+        ]
+      },
+      "health": {
+        "endpoints": [
+          { "method": "GET", "path": "/health", "auth": false, "description": "Express backend health check" }
+        ]
+      }
+    }
+  },
+
+  "ai_agents_service": {
+    "framework": "FastAPI",
+    "port": 8000,
+    "entry_point": "apps/agents/main.py",
+    "pattern": "Supervisor-Worker (multi-agent)",
+    "api_endpoints": [
+      { "method": "GET", "path": "/health", "description": "FastAPI service health check" },
+      { "method": "GET", "path": "/languages", "description": "List supported response languages" },
+      {
+        "method": "POST",
+        "path": "/chat",
+        "description": "Main AI chat endpoint",
+        "request_body": {
+          "message": "string — teacher's question or request",
+          "thread_id": "string — per-user conversation ID (default: 'default_user')",
+          "learner_name": "string — optional learner context",
+          "records": "array — optional learner records for context",
+          "language_pref": "string — response language (default: 'en')"
+        },
+        "response": {
+          "status": "success | error",
+          "input_received": "string",
+          "response": "string — AI-generated response"
+        }
+      }
+    ],
+    "supervisor": {
+      "llm": "Groq (llama-3.3-70b-versatile)",
+      "temperature": 0,
+      "max_tokens": 10,
+      "purpose": "Classify teacher request and route to the best worker agent",
+      "output_labels": ["general", "lesson", "multimodal", "schedule", "visual", "analytics"],
+      "fallback": "Returns 'general' if GROQ_API_KEY is missing"
+    },
+    "worker_agents": [
+      {
+        "id": "general",
+        "name": "General Teaching Companion",
+        "file": "app/agents/general_agent.py",
+        "llm": "Google Gemini 2.5-flash",
+        "handles": ["classroom strategies", "behavior support", "IEP guidance", "parent communication", "accommodation ideas", "general teaching Q&A"],
+        "tone": "Warm, collegial, strengths-first, neurodivergent-affirming",
+        "format": "2–4 sentences for quick questions; numbered list for strategy requests"
+      },
+      {
+        "id": "lesson",
+        "name": "Lesson Planner Agent",
+        "file": "app/agents/lesson_planer_agent.py",
+        "llm": "Google Gemini 2.5-flash",
+        "handles": ["adapting lesson plans", "scaffolding materials", "breaking tasks into steps", "simplifying language", "differentiation strategies"]
+      },
+      {
+        "id": "multimodal",
+        "name": "Multimodal Agent",
+        "file": "app/agents/Multimodal_agent.py",
+        "llm": "Google Gemini 2.5-flash",
+        "handles": ["PDF analysis", "image processing", "text-to-audio concepts", "document question-answering"],
+        "notes": "PDF loading and HuggingFace embeddings are lazy-initialized on first request to avoid startup latency"
+      },
+      {
+        "id": "schedule",
+        "name": "Schedule Agent",
+        "file": "app/agents/scheduling_agent.py",
+        "llm": "Google Gemini 2.5-flash",
+        "handles": ["visual schedules", "transition routines", "countdowns", "time-blocking", "daily routine building", "calendar integration advice"]
+      },
+      {
+        "id": "visual",
+        "name": "Visual Support Agent",
+        "file": "app/agents/visual_support_agent.py",
+        "llm": "Google Gemini 2.5-flash",
+        "handles": ["social stories", "emotion charts", "token boards", "now/next boards", "mind maps", "visual communication supports"]
+      },
+      {
+        "id": "analytics",
+        "name": "Analytics Agent",
+        "file": "app/agents/analytics_agent.py",
+        "llm": "Google Gemini 2.5-flash",
+        "handles": ["behavior frequency analysis", "progress tracking", "intervention reports", "sensory log summaries", "attendance patterns"]
+      }
+    ],
+    "guardrails": {
+      "input": {
+        "prompt_injection_patterns": 7,
+        "harmful_content_patterns": 11,
+        "off_topic_abuse_patterns": 5,
+        "pii_scrubbing": "Strips 13-digit IDs, emails, phone numbers",
+        "max_input_length": 2000
+      },
+      "output": {
+        "secret_redaction": "Strips API_KEY=..., Bearer ..., sk-... patterns",
+        "max_output_length": 8000,
+        "truncation_message": "[Response truncated]"
+      }
+    },
+    "memory": {
+      "storage": "SQLite (thandi_memory.sqlite)",
+      "threading": "thread_id enables per-user conversation persistence",
+      "module": "app/core/memory_tools.py"
+    },
+    "language_support": {
+      "supported": ["English (en)", "Spanish (es)", "French (fr)"],
+      "mechanism": "Dynamic system prompt injection per language preference",
+      "module": "app/core/language.py"
+    },
+    "request_flow": [
+      "FastAPI /chat receives ChatRequest",
+      "check_input() guardrails run (injection, harmful, PII scrub)",
+      "Supervisor agent classifies request via Groq LLM",
+      "Worker agent selected from AGENT_MAP by label",
+      "Worker invoked with state dict (message + context)",
+      "check_output() guardrails run (secrets, truncation)",
+      "Sanitized response returned to caller"
+    ]
+  },
+
+  "frontend": {
+    "framework": "Next.js 13 (App Router)",
+    "path": "apps/frontend",
+    "pages": [
+      { "route": "/", "file": "app/page.tsx", "purpose": "Landing / splash page", "auth": false },
+      { "route": "/login", "file": "app/login/page.tsx", "purpose": "Email + password login form", "auth": false },
+      { "route": "/signup", "file": "app/signup/page.tsx", "purpose": "Teacher registration form", "auth": false },
+      { "route": "/forgot-password", "file": "app/forgot-password/page.tsx", "purpose": "Password reset request form", "auth": false },
+      { "route": "/oauth-callback", "file": "app/oauth-callback/page.tsx", "purpose": "Handles OAuth provider redirects (parses token + user from URL)", "auth": false },
+      { "route": "/dashboard", "file": "app/dashboard/page.tsx", "purpose": "Teacher home dashboard (widgets, recent activity, quick stats)", "auth": true },
+      { "route": "/dashboard/tools", "file": "app/dashboard/tools/page.tsx", "purpose": "Tools hub menu (entry point to all tool sub-pages)", "auth": true },
+      { "route": "/dashboard/tools/learner-profiles", "file": "app/dashboard/tools/learner-profiles/page.tsx", "purpose": "Manage learner profiles — add, view, bulk CSV import, log sensory events, record progress", "auth": true },
+      { "route": "/dashboard/tools/assessment-planner", "file": "app/dashboard/tools/assessment-planner/page.tsx", "purpose": "AI-powered lesson and assessment planner", "auth": true },
+      { "route": "/dashboard/tools/visual-support", "file": "app/dashboard/tools/visual-support/page.tsx", "purpose": "Generate visual supports (now/next boards, social stories, emotion charts)", "auth": true },
+      { "route": "/dashboard/tools/schedule-tracking", "file": "app/dashboard/tools/schedule-tracking/page.tsx", "purpose": "Visual schedule builder and Google Calendar integration", "auth": true },
+      { "route": "/dashboard/community", "file": "app/dashboard/community/page.tsx", "purpose": "Community hub (entry point to forum and parent comms)", "auth": true },
+      { "route": "/dashboard/community/parent-communication", "file": "app/dashboard/community/parent-communication/page.tsx", "purpose": "Write or AI-generate parent letters (progress/concern), export to PDF", "auth": true },
+      { "route": "/dashboard/community/forum", "file": "app/dashboard/community/forum/page.tsx", "purpose": "Browse and post community forum discussions", "auth": true },
+      { "route": "/dashboard/professional-development", "file": "app/dashboard/professional-development/page.tsx", "purpose": "Training resources, find local NGOs and therapy services", "auth": true }
+    ],
+    "components": [
+      {
+        "name": "DashboardLayout",
+        "file": "components/DashboardLayout.tsx",
+        "purpose": "Main layout wrapper for all dashboard pages — header, navigation tabs, profile menu, notifications, language selector, logout. Includes AgentChat floating widget. Responsive (desktop sidebar + mobile bottom nav)."
+      },
+      {
+        "name": "AgentChat",
+        "file": "components/AgentChat.tsx",
+        "purpose": "Floating AI chat button and slide-in panel. Talks to Thandi AI via /api/agent/chat. Persists thread_id in localStorage. Supports Enter to send, Shift+Enter for newline. Shows 'Thinking...' loading state."
+      },
+      {
+        "name": "LearnerCard",
+        "file": "components/LearnerCard.tsx",
+        "purpose": "Card component displaying learner pseudonym, age, and support needs in list views"
+      },
+      {
+        "name": "LearnerProgressModal",
+        "file": "components/LearnerProgressModal.tsx",
+        "purpose": "Modal form for recording a learner progress entry (area, level, achievements, engagement, attendance, task completion, AI suggestions)"
+      },
+      {
+        "name": "SensoryToolkitModal",
+        "file": "components/SensoryToolkitModal.tsx",
+        "purpose": "Modal form for logging a sensory behavior event (trigger, behavior, response, notes)"
+      },
+      {
+        "name": "SettingsPanel",
+        "file": "components/SettingsPanel.tsx",
+        "purpose": "User settings modal — theme preference, language selection, and profile editing"
+      }
+    ],
+    "types": "apps/frontend/types/database.ts — TypeScript interfaces matching database schemas"
+  },
+
+  "third_party_integrations": [
+    {
+      "service": "Google OAuth 2.0",
+      "purpose": "Teacher authentication via Google account",
+      "env_vars": ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
+      "library": "passport-google-oauth20"
+    },
+    {
+      "service": "Microsoft OAuth 2.0",
+      "purpose": "Teacher authentication via Microsoft / School account",
+      "env_vars": ["MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET"],
+      "library": "passport-microsoft"
+    },
+    {
+      "service": "Apple OAuth 2.0",
+      "purpose": "Teacher authentication via Apple ID",
+      "env_vars": ["APPLE_CLIENT_ID", "APPLE_CLIENT_SECRET"],
+      "library": "passport-apple"
+    },
+    {
+      "service": "Google Calendar API",
+      "purpose": "Calendar sync for schedule tracking and visual schedule reminders",
+      "flow": "User authorizes via /calendar/connect → tokens stored in calendar_tokens table → used for calendar automation",
+      "modules": ["app/core/google_calendar_automation.py", "app/core/calendar_token_store.py"]
+    },
+    {
+      "service": "Gmail / Google SMTP",
+      "purpose": "Sending password reset emails and notifications to teachers",
+      "env_vars": ["EMAIL_HOST", "EMAIL_PORT", "EMAIL_USER", "EMAIL_PASS", "EMAIL_FROM"],
+      "library": "Nodemailer"
+    },
+    {
+      "service": "Groq LLM API",
+      "purpose": "Supervisor agent — ultra-fast routing classification to select the best worker agent",
+      "model": "llama-3.3-70b-versatile",
+      "env_vars": ["GROQ_API_KEY"],
+      "fallback": "Defaults to 'general' agent if key missing"
+    },
+    {
+      "service": "Google Gemini API",
+      "purpose": "All 6 worker agents — lesson planning, visual supports, analytics, scheduling, general guidance, multimodal",
+      "model": "gemini-2.5-flash",
+      "env_vars": ["GEMINI_API_KEY"],
+      "library": "langchain-google-genai"
+    },
+    {
+      "service": "HuggingFace",
+      "purpose": "Embeddings for RAG over curriculum documents",
+      "library": "sentence-transformers",
+      "notes": "Lazy-initialized in multimodal agent to avoid startup crashes"
+    },
+    {
+      "service": "ChromaDB",
+      "purpose": "Vector database for semantic search over uploaded curriculum PDFs",
+      "type": "local",
+      "path": "apps/agents/vector_db"
+    },
+    {
+      "service": "YouTube Data API",
+      "purpose": "Fetch educational videos for professional development page (planned)",
+      "env_vars": ["YOUTUBE_API_KEY"]
+    }
+  ],
+
+  "environment_variables": {
+    "backend": {
+      "server": {
+        "PORT": "5000"
+      },
+      "database": {
+        "DB_HOST": "localhost",
+        "DB_PORT": "5432",
+        "DB_USER": "postgres",
+        "DB_PASSWORD": "<secure_password>",
+        "DB_NAME": "allminds_db"
+      },
+      "auth": {
+        "JWT_SECRET": "<strong_secret_key>",
+        "JWT_EXPIRES_IN": "7d",
+        "BCRYPT_ROUNDS": "10"
+      },
+      "email": {
+        "EMAIL_HOST": "smtp.gmail.com",
+        "EMAIL_PORT": "587",
+        "EMAIL_USER": "<gmail_address>",
+        "EMAIL_PASS": "<gmail_app_password>",
+        "EMAIL_FROM": "noreply@allminds.org"
+      },
+      "oauth": {
+        "GOOGLE_CLIENT_ID": "<...>.apps.googleusercontent.com",
+        "GOOGLE_CLIENT_SECRET": "<...>",
+        "MICROSOFT_CLIENT_ID": "<...>",
+        "MICROSOFT_CLIENT_SECRET": "<...>",
+        "APPLE_CLIENT_ID": "<...>",
+        "APPLE_CLIENT_SECRET": "<...>"
+      },
+      "urls": {
+        "BACKEND_URL": "http://localhost:5000",
+        "FRONTEND_URL": "http://localhost:3000",
+        "ALLOWED_ORIGINS": "http://localhost:3000,http://127.0.0.1:3000",
+        "APP_TIMEZONE": "Africa/Johannesburg"
+      }
+    },
+    "frontend": {
+      "NEXT_PUBLIC_API_URL": "http://localhost:5000/api",
+      "BACKEND_API_URL": "http://localhost:5000/api",
+      "AGENTIC_AI_URL": "http://127.0.0.1:8000"
+    },
+    "agents": {
+      "GROQ_API_KEY": "<groq_api_key>",
+      "GEMINI_API_KEY": "<gemini_api_key>",
+      "YOUTUBE_API_KEY": "<youtube_api_key>"
+    }
+  },
+
+  "security": {
+    "authentication": "JWT with 7-day expiry",
+    "password_storage": "bcrypt 10 rounds",
+    "cors": "Restricted to ALLOWED_ORIGINS",
+    "ai_guardrails": {
+      "input": ["prompt injection blocking", "harmful content blocking", "off-topic abuse blocking", "PII scrubbing", "2000 char max"],
+      "output": ["secret/key redaction", "8000 char truncation"]
+    },
+    "privacy": {
+      "learner_anonymization": "Learners identified by pseudonym and anonymous_id — no real names stored",
+      "pii_scrubbing": "Automatic removal of IDs, emails, phone numbers from AI inputs"
+    },
+    "authorization": {
+      "teacher_routes": "authenticateToken middleware",
+      "admin_routes": "authenticateToken + authorizeAdmin middleware",
+      "public_routes": ["GET /forum", "GET /strategies", "GET /ngos", "/auth/*", "/health"]
+    }
+  },
+
+  "key_design_decisions": [
+    {
+      "decision": "Neurodivergent-affirming language throughout AI agents",
+      "rationale": "Avoid functioning labels, use strengths-first framing, respect neurodiversity principles"
+    },
+    {
+      "decision": "Learner pseudonymization by default",
+      "rationale": "Privacy-first: children's real identities never enter the system"
+    },
+    {
+      "decision": "Supervisor-Worker agent pattern",
+      "rationale": "Enables domain-specific expert agents without a monolithic model. Groq used for cheap routing, Gemini for quality generation."
+    },
+    {
+      "decision": "Lazy initialization of PDF/embedding models",
+      "rationale": "Avoids 30–60 second startup delay; models load on first RAG request only"
+    },
+    {
+      "decision": "Graceful degradation on missing API keys",
+      "rationale": "All OAuth providers and LLM providers show clear error messages rather than crashing the service"
+    },
+    {
+      "decision": "JSONB columns for sensory logs and progress data",
+      "rationale": "Flexible schema for evolving learner data structures without repeated migrations"
+    },
+    {
+      "decision": "Two-layer guardrails (API entry + router)",
+      "rationale": "Defense in depth — malicious inputs blocked before reaching any LLM"
+    },
+    {
+      "decision": "thread_id-based conversation persistence in SQLite",
+      "rationale": "Enables multi-turn Thandi conversations without storing sensitive data in PostgreSQL"
+    },
+    {
+      "decision": "Next.js proxies /api/agent/chat to FastAPI",
+      "rationale": "Avoids exposing the Python service port directly to browsers; single origin for frontend"
+    },
+    {
+      "decision": "School → Class → Learner hierarchy",
+      "rationale": "Multi-tenancy ready: supports future school accounts and class-level admin management"
+    }
+  ],
+
+  "directory_structure": {
+    "AllMinds/": {
+      "README.md": "Project overview and setup instructions",
+      "system-design.json": "This file — full system design specification",
+      "apps/": {
+        "frontend/": {
+          "app/": "Next.js 13 App Router pages",
+          "components/": "Shared React components",
+          "lib/": "API client utilities",
+          "types/": "TypeScript interfaces",
+          "public/": "Static assets",
+          "package.json": "Frontend dependencies",
+          ".env.local": "Frontend environment variables"
+        },
+        "backend/": {
+          "src/": {
+            "app.js": "Express app setup, middleware, route mounting",
+            "controllers/": "Route handler logic (auth, learners, forum, strategies, etc.)",
+            "routes/": "Express router definitions",
+            "middleware/": "Auth middleware (authenticateToken, authorizeAdmin)",
+            "db.js": "PostgreSQL connection pool"
+          },
+          "database/": {
+            "migrations/": "SQL migration files (numbered, sequential)",
+            "seeds/": "Sample data SQL scripts"
+          },
+          "package.json": "Backend dependencies",
+          ".env": "Backend environment variables"
+        },
+        "agents/": {
+          "main.py": "Uvicorn entry point",
+          "requirements.txt": "Python dependencies",
+          "app/": {
+            "api/index.py": "FastAPI app definition and endpoints",
+            "agents/": "6 worker agent modules",
+            "core/": "Router, supervisor, guardrails, language, memory, calendar modules",
+            "models/": "Pydantic data models"
+          },
+          "vector_db/": "ChromaDB persistent vector store",
+          "thandi_memory.sqlite": "Conversation memory database",
+          ".venv/": "Python virtual environment",
+          ".env": "Agents environment variables"
+        }
+      }
+    }
+  }
+}

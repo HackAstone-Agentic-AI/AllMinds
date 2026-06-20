@@ -2,6 +2,7 @@ import os
 from langchain_groq import ChatGroq
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage
+from app.core.language import get_language_instruction
 
 # ─── LLM Setup ────────────────────────────────────────────────────────────────
 
@@ -178,6 +179,7 @@ def general_agent(state: dict) -> dict:
 
     question = sanitize_input(user_input)
     context_note = build_context_note(state)
+    language_note = get_language_instruction(state)
     llm = get_llm()
 
     if llm is None:
@@ -192,7 +194,7 @@ def general_agent(state: dict) -> dict:
     )
 
     response = llm.invoke([
-        SystemMessage(content=GENERAL_SYSTEM_PROMPT),
+        SystemMessage(content=GENERAL_SYSTEM_PROMPT + language_note),
         HumanMessage(content=user_message),
     ])
 

@@ -1,8 +1,9 @@
 const express = require('express');
+const { authenticateToken } = require('../middleware/auth');
 const { proxyAgentChat } = require('../controllers/agentController');
 
 const router = express.Router();
 
-router.post('/chat', proxyAgentChat);
+router.post('/chat', authenticateToken, proxyAgentChat);
 
 module.exports = router;

@@ -42,3 +42,6 @@ Microsoft/
 .DS_Store
 Thumbs.db
 *.pem
+
+SECURITY_FIXES.md
+SECURITY_FIXES_ROUND2.md

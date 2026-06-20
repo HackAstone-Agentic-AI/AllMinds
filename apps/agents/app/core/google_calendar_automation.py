@@ -1,45 +1,58 @@
 import os
-import pickle
 import re
 from datetime import datetime, timedelta
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 
+from app.core.calendar_token_store import (
+    get_calendar_token,
+    save_refreshed_calendar_token,
+)
+
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
-TOKEN_FILE = "token.pickle"
-DEFAULT_CREDENTIALS_FILE = Path(__file__).resolve().parents[1] / "Credentials.json"
-CREDENTIALS_FILE = os.getenv("GOOGLE_OAUTH_CLIENT_FILE", str(DEFAULT_CREDENTIALS_FILE))
 TIMEZONE = os.getenv("APP_TIMEZONE", "Africa/Johannesburg")
 
 
-def get_calendar_service():
-    creds = None
+class CalendarNotConnectedError(Exception):
+    pass
 
-    if os.path.exists(TOKEN_FILE):
-        with open(TOKEN_FILE, "rb") as token:
-            creds = pickle.load(token)
 
-    if creds and creds.expired and creds.refresh_token:
-        creds.refresh(Request())
+def get_calendar_service(thread_id: str):
+    token_info = get_calendar_token(thread_id)
+    if token_info is None:
+        raise CalendarNotConnectedError(
+            "Google Calendar is not connected for this account yet."
+        )
 
-    if not creds or not creds.valid:
-        if not os.path.exists(CREDENTIALS_FILE):
-            raise FileNotFoundError(
-                f"OAuth client file not found: {CREDENTIALS_FILE}. "
-                "Download your OAuth desktop app credentials from Google Cloud "
-                "and place the file in your project root."
+    client_id = os.getenv("GOOGLE_CLIENT_ID")
+    client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
+
+    creds = Credentials(
+        token=token_info["token"],
+        refresh_token=token_info.get("refresh_token"),
+        token_uri=token_info.get("token_uri", "https://oauth2.googleapis.com/token"),
+        client_id=client_id,
+        client_secret=client_secret,
+        scopes=token_info.get("scopes") or SCOPES,
+    )
+    if token_info.get("expiry"):
+        creds.expiry = datetime.fromisoformat(token_info["expiry"])
+
+    if creds.expired and creds.refresh_token:
+        if not client_id or not client_secret:
+            raise CalendarNotConnectedError(
+                "Google Calendar token expired and GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET are not configured."
             )
+        creds.refresh(Request())
+        save_refreshed_calendar_token(thread_id, creds)
 
-        flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
-        creds = flow.run_local_server(port=0)
-
-        with open(TOKEN_FILE, "wb") as token:
-            pickle.dump(creds, token)
+    if not creds.valid:
+        raise CalendarNotConnectedError(
+            "Google Calendar needs to be reconnected for this account."
+        )
 
     return build("calendar", "v3", credentials=creds)
 
@@ -220,7 +233,7 @@ def create_simple_event(service, user_input: str) -> str:
     return f"Google Calendar event '{created_summary}' scheduled for {created_start}."
 
 
-def run_calendar_automation(user_input: str) -> dict:
+def run_calendar_automation(user_input: str, thread_id: str) -> dict:
     text = user_input.strip()
     if not text:
         return {
@@ -229,7 +242,12 @@ def run_calendar_automation(user_input: str) -> dict:
         }
 
     try:
-        service = get_calendar_service()
+        service = get_calendar_service(thread_id)
+    except CalendarNotConnectedError as exc:
+        return {
+            "output": f"{exc} Please connect Google Calendar from your AllMinds account settings, then try again.",
+            "status": "calendar_not_connected",
+        }
     except Exception as exc:
         return {
             "output": f"Failed to connect to Google Calendar: {exc}",

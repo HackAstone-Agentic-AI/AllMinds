@@ -3,8 +3,60 @@ const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const OAuth2Strategy = require('passport-oauth2');
 const pool = require('./database');
 const jwt = require('jsonwebtoken');
+const https = require('https');
+const crypto = require('crypto');
 
 const backendUrl = process.env.BACKEND_URL || 'http://localhost:5000';
+
+// ---------------------------------------------------------------------------
+// Apple JWKS verification
+// ---------------------------------------------------------------------------
+let _appleKeysCache = null;
+let _appleKeysCacheExpiry = 0;
+
+function fetchApplePublicKeys() {
+    if (_appleKeysCache && Date.now() < _appleKeysCacheExpiry) {
+        return Promise.resolve(_appleKeysCache);
+    }
+    return new Promise((resolve, reject) => {
+        https.get('https://appleid.apple.com/auth/keys', (res) => {
+            let data = '';
+            res.on('data', (chunk) => (data += chunk));
+            res.on('end', () => {
+                try {
+                    const { keys } = JSON.parse(data);
+                    if (!Array.isArray(keys) || keys.length === 0) {
+                        throw new Error('Apple JWKS response missing or empty keys array');
+                    }
+                    _appleKeysCache = keys;
+                    _appleKeysCacheExpiry = Date.now() + 60 * 60 * 1000; // cache 1 hour
+                    resolve(keys);
+                } catch (e) {
+                    reject(e);
+                }
+            });
+        }).on('error', reject);
+    });
+}
+
+async function verifyAppleIdToken(idToken) {
+    const headerB64 = idToken.split('.')[0];
+    const header = JSON.parse(Buffer.from(headerB64, 'base64url').toString());
+    const keys = await fetchApplePublicKeys();
+    const jwk = keys.find((k) => k.kid === header.kid);
+    if (!jwk) throw new Error(`Apple public key not found for kid: ${header.kid}`);
+    // Node 16+ supports importing a JWK directly via createPublicKey
+    const publicKey = crypto.createPublicKey({ key: jwk, format: 'jwk' });
+    return jwt.verify(
+        idToken,
+        publicKey.export({ type: 'spki', format: 'pem' }),
+        {
+            algorithms: ['RS256'],
+            issuer: 'https://appleid.apple.com',
+            audience: process.env.APPLE_CLIENT_ID,
+        }
+    );
+}
 
 const createToken = (user) =>
     jwt.sign(
@@ -155,8 +207,12 @@ if (process.env.APPLE_CLIENT_ID && process.env.APPLE_CLIENT_SECRET) {
         },
         async (req, accessToken, refreshToken, params, profile, done) => {
             try {
-                const idToken = params?.id_token || req.body?.id_token;
-                const decoded = jwt.decode(idToken || '') || {};
+                const idToken = params?.id_token;
+                if (!idToken) {
+                    return done(new Error('Apple did not return an id_token'));
+                }
+                // Verify signature, issuer, audience, and expiry against Apple's public keys
+                const decoded = await verifyAppleIdToken(idToken);
                 const appleUser =
                     typeof req.body?.user === 'string' ? JSON.parse(req.body.user) : req.body?.user;
                 const email = decoded.email;

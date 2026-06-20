@@ -2,6 +2,7 @@ import os
 from langchain_groq import ChatGroq
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage
+from app.core.language import get_language_instruction
 
 # ─── LLM Setup ────────────────────────────────────────────────────────────────
 
@@ -153,6 +154,7 @@ def lesson_planner_agent(state: dict) -> dict:
 
     topic = sanitize_input(user_input)
     context_note = build_context_note(state)
+    language_note = get_language_instruction(state)
     llm = get_llm()
 
     if llm is None:
@@ -169,7 +171,7 @@ def lesson_planner_agent(state: dict) -> dict:
     )
 
     response = llm.invoke([
-        SystemMessage(content=LESSON_SYSTEM_PROMPT),
+        SystemMessage(content=LESSON_SYSTEM_PROMPT + language_note),
         HumanMessage(content=user_message)
     ])
 

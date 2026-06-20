@@ -42,8 +42,11 @@ export default function AgentChat() {
       const threadId =
         (typeof window !== 'undefined' && localStorage.getItem('allminds_user')) ||
         'default_user';
+      const languagePref =
+        (typeof window !== 'undefined' && localStorage.getItem('allminds_language')) ||
+        'en';
 
-      const result = await api.chatWithAgent(text, { thread_id: threadId });
+      const result = await api.chatWithAgent(text, { thread_id: threadId, language_pref: languagePref });
       const reply: string = result?.response ?? result?.output ?? 'No response received.';
       setMessages((prev) => [...prev, { role: 'assistant', content: reply }]);
     } catch (err) {

@@ -12,11 +12,26 @@ interface SettingsPanelProps {
 }
 
 export default function SettingsPanel({ profile, onClose, onUpdate }: SettingsPanelProps) {
+  const SA_LANGUAGES = [
+    { code: 'en',  english_name: 'English',       native_name: 'English' },
+    { code: 'zu',  english_name: 'Zulu',           native_name: 'isiZulu' },
+    { code: 'xh',  english_name: 'Xhosa',          native_name: 'isiXhosa' },
+    { code: 'af',  english_name: 'Afrikaans',       native_name: 'Afrikaans' },
+    { code: 'nso', english_name: 'Sepedi',          native_name: 'Sepedi' },
+    { code: 'tn',  english_name: 'Setswana',        native_name: 'Setswana' },
+    { code: 'st',  english_name: 'Sesotho',         native_name: 'Sesotho' },
+    { code: 'ts',  english_name: 'Xitsonga',        native_name: 'Xitsonga' },
+    { code: 'ss',  english_name: 'siSwati',         native_name: 'siSwati' },
+    { code: 've',  english_name: 'Tshivenda',       native_name: 'Tshivenda' },
+    { code: 'nr',  english_name: 'isiNdebele',      native_name: 'isiNdebele' },
+  ];
+
   const [formData, setFormData] = useState({
     title: profile.title,
     name: profile.name,
     surname: profile.surname,
     theme_preference: profile.theme_preference,
+    language_pref: profile.language_pref || 'en',
   });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -30,7 +45,11 @@ export default function SettingsPanel({ profile, onClose, onUpdate }: SettingsPa
         name: formData.name,
         surname: formData.surname,
         theme_preference: formData.theme_preference,
+        language_pref: formData.language_pref,
       });
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('allminds_language', formData.language_pref);
+      }
       setMessage('Settings saved successfully');
       onUpdate();
       setTimeout(() => {
@@ -145,6 +164,24 @@ export default function SettingsPanel({ profile, onClose, onUpdate }: SettingsPa
                 </button>
               </div>
             </div>
+          </div>
+
+          <div>
+            <h3 className="text-lg font-semibold text-slate-800 mb-4">Language / Taal / Ulimi</h3>
+            <p className="text-sm text-slate-500 mb-3">
+              Choose the language Thandi responds in. All 11 official South African languages are supported.
+            </p>
+            <select
+              value={formData.language_pref}
+              onChange={(e) => setFormData({ ...formData, language_pref: e.target.value })}
+              className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+            >
+              {SA_LANGUAGES.map((lang) => (
+                <option key={lang.code} value={lang.code}>
+                  {lang.native_name} — {lang.english_name}
+                </option>
+              ))}
+            </select>
           </div>
 
           {message && (

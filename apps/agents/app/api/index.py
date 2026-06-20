@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from app.core.router import run_multi_agent
 from app.core.guardrails import check_input
+from app.core.language import language_list_for_frontend
 
 load_dotenv(Path(__file__).resolve().parents[4] / ".env")
 
@@ -35,6 +36,7 @@ class ChatRequest(BaseModel):
     thread_id: str = "default_user"
     learner_name: str = ""
     records: list[dict[str, Any]] = Field(default_factory=list)
+    language_pref: str = "en"
 
 
 def sanitize_input(text: str) -> str:
@@ -61,6 +63,11 @@ async def healthcheck() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/languages")
+async def list_languages() -> dict:
+    return {"languages": language_list_for_frontend()}
+
+
 @app.post("/chat")
 async def chat_endpoint(
     payload: ChatRequest,
@@ -80,6 +87,7 @@ async def chat_endpoint(
         thread_id=payload.thread_id,
         learner_name=payload.learner_name,
         records=payload.records,
+        language_pref=payload.language_pref,
     )
 
     return {

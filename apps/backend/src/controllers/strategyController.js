@@ -102,39 +102,44 @@ const voteStrategy = async (req, res) => {
     const { id } = req.params;
     const userId = req.user.id;
 
+    const client = await pool.connect();
     try {
-        // Check if already voted
-        const existing = await pool.query(
-            'SELECT id FROM strategy_votes WHERE strategy_id = $1 AND user_id = $2',
+        await client.query('BEGIN');
+
+        const insertResult = await client.query(
+            'INSERT INTO strategy_votes (strategy_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
             [id, userId]
         );
 
-        if (existing.rows.length > 0) {
+        if (insertResult.rowCount === 0) {
+            await client.query('ROLLBACK');
             return res.status(409).json({ error: 'You have already voted for this strategy' });
         }
 
-        // Add vote
-        await pool.query(
-            'INSERT INTO strategy_votes (strategy_id, user_id) VALUES ($1, $2)',
-            [id, userId]
-        );
-
-        // Increment helpful_count
-        const result = await pool.query(
-            `UPDATE community_strategies 
+        const result = await client.query(
+            `UPDATE community_strategies
              SET helpful_count = helpful_count + 1
              WHERE id = $1
              RETURNING helpful_count`,
             [id]
         );
 
-        res.json({ 
+        if (result.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Strategy not found' });
+        }
+
+        await client.query('COMMIT');
+        res.json({
             message: 'Voted successfully',
-            helpful_count: result.rows[0].helpful_count
+            helpful_count: result.rows[0].helpful_count,
         });
     } catch (error) {
+        await client.query('ROLLBACK');
         console.error('Vote strategy error:', error);
         res.status(500).json({ error: 'Failed to vote' });
+    } finally {
+        client.release();
     }
 };
 

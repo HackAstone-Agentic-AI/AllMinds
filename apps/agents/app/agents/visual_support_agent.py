@@ -4,6 +4,7 @@ from urllib.parse import quote_plus
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 from langchain_core.messages import SystemMessage, HumanMessage
+from app.core.language import get_language_instruction
 
 # ─── LLM Setup ────────────────────────────────────────────────────────────────
 
@@ -213,8 +214,9 @@ def visual_support_agent(state: dict) -> dict:
     )
 
     # ── LLM Call ──────────────────────────────────────────────────────────────
+    language_note = get_language_instruction(state)
     response = llm.invoke([
-        SystemMessage(content=VISUAL_SUPPORT_SYSTEM_PROMPT),
+        SystemMessage(content=VISUAL_SUPPORT_SYSTEM_PROMPT + language_note),
         HumanMessage(content=user_message),
     ])
 

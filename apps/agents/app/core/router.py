@@ -23,6 +23,7 @@ def run_multi_agent(
     thread_id: str = "default_user",
     learner_name: str = "",
     records: list[dict[str, Any]] = None,
+    language_pref: str = "en",
 ) -> str:
     if records is None:
         records = []
@@ -32,10 +33,11 @@ def run_multi_agent(
         return guard.reason
 
     state = {
-        "input":        guard.cleaned,
-        "thread_id":    thread_id,
-        "learner_name": learner_name,
-        "records":      records,
+        "input":         guard.cleaned,
+        "thread_id":     thread_id,
+        "learner_name":  learner_name,
+        "records":       records,
+        "language_pref": language_pref,
     }
 
     try:

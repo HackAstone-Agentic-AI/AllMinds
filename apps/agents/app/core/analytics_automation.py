@@ -3,6 +3,7 @@ import statistics
 import textwrap
 from datetime import datetime
 from typing import Any
+from app.core.language import resolve_language_code, SA_LANGUAGES
 
 try:
     import matplotlib
@@ -287,7 +288,38 @@ def generate_narrative(learner_name: str, summary: dict, risk_flags: list[str], 
     return " ".join(sentences[:5])
 
 
-def run_analytics_automation(user_input: str, learner_name: str = "", records: list | None = None) -> dict:
+def _translate_analytics_text(text: str, language_pref: str) -> str:
+    """Translate short analytics output text to the target SA language using Gemini."""
+    code = resolve_language_code(language_pref)
+    if code == "en":
+        return text
+    meta = SA_LANGUAGES.get(code, SA_LANGUAGES["en"])
+    try:
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        from langchain_core.messages import SystemMessage, HumanMessage
+        gemini_api_key = os.getenv("GEMINI_API_KEY")
+        if not gemini_api_key:
+            return text
+        llm = ChatGoogleGenerativeAI(
+            model="gemini-2.5-flash",
+            api_key=gemini_api_key,
+            temperature=0,
+            max_tokens=600,
+        )
+        response = llm.invoke([
+            SystemMessage(content=(
+                f"Translate the following educational progress summary into {meta['native_name']} ({meta['english_name']}). "
+                "Keep numbers, percentages, and proper nouns unchanged. "
+                "Return only the translated text, nothing else."
+            )),
+            HumanMessage(content=text),
+        ])
+        return response.content.strip()
+    except Exception:
+        return text
+
+
+def run_analytics_automation(user_input: str, learner_name: str = "", records: list | None = None, language_pref: str = "en") -> dict:
     learner = learner_name or "Learner"
     rows = records or []
 
@@ -368,6 +400,9 @@ def run_analytics_automation(user_input: str, learner_name: str = "", records: l
     )
     if risk_flags:
         output += " Risk flags: " + "; ".join(risk_flags) + "."
+
+    output = _translate_analytics_text(output, language_pref)
+    narrative = _translate_analytics_text(narrative, language_pref)
 
     return {
         "output": output,

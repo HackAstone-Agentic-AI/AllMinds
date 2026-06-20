@@ -3,32 +3,34 @@ const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const { sendEmail } = require('../config/email');
 
+const hashToken = (token) =>
+    crypto.createHash('sha256').update(token).digest('hex');
+
 // Request password reset
 const forgotPassword = async (req, res) => {
     const { email } = req.body;
     if (!email) return res.status(400).json({ error: 'Email is required' });
 
     try {
-        // Find user
         const userResult = await pool.query('SELECT id, email FROM users WHERE email = $1', [email]);
         if (userResult.rows.length === 0) {
-            // For security, don't reveal that user doesn't exist
             return res.json({ message: 'If that email is registered, you will receive a reset link.' });
         }
 
         const user = userResult.rows[0];
 
-        // Generate token
+        // Invalidate any existing tokens for this user before issuing a new one
+        await pool.query('DELETE FROM password_reset_tokens WHERE user_id = $1', [user.id]);
+
         const token = crypto.randomBytes(32).toString('hex');
+        const tokenHash = hashToken(token);
         const expiresAt = new Date(Date.now() + 3600000); // 1 hour
 
-        // Store token
         await pool.query(
             'INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES ($1, $2, $3)',
-            [user.id, token, expiresAt]
+            [user.id, tokenHash, expiresAt]
         );
 
-        // Send email
         const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
         const html = `
             <h2>Reset Your AllMinds Password</h2>
@@ -55,34 +57,40 @@ const resetPassword = async (req, res) => {
         return res.status(400).json({ error: 'Password must be at least 6 characters' });
     }
 
+    const tokenHash = hashToken(token);
+    const client = await pool.connect();
     try {
-        // Find valid token
-        const tokenResult = await pool.query(
+        await client.query('BEGIN');
+
+        const tokenResult = await client.query(
             'SELECT user_id, expires_at FROM password_reset_tokens WHERE token = $1',
-            [token]
+            [tokenHash]
         );
         if (tokenResult.rows.length === 0) {
+            try { await client.query('ROLLBACK'); } catch (_) {}
             return res.status(400).json({ error: 'Invalid or expired token' });
         }
 
         const { user_id, expires_at } = tokenResult.rows[0];
         if (new Date() > expires_at) {
+            try { await client.query('ROLLBACK'); } catch (_) {}
             return res.status(400).json({ error: 'Token has expired' });
         }
 
-        // Hash new password
+        // Delete the token first — prevents reuse even if password update fails
+        await client.query('DELETE FROM password_reset_tokens WHERE token = $1', [tokenHash]);
+
         const hashedPassword = await bcrypt.hash(new_password, 10);
+        await client.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hashedPassword, user_id]);
 
-        // Update user password
-        await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hashedPassword, user_id]);
-
-        // Delete used token
-        await pool.query('DELETE FROM password_reset_tokens WHERE token = $1', [token]);
-
+        await client.query('COMMIT');
         res.json({ message: 'Password reset successfully. You can now login.' });
     } catch (err) {
+        try { await client.query('ROLLBACK'); } catch (_) {}
         console.error(err);
         res.status(500).json({ error: 'Failed to reset password' });
+    } finally {
+        client.release();
     }
 };
 

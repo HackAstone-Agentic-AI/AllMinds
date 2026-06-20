@@ -4,8 +4,9 @@ export interface TeacherProfile {
   title: string;
   name: string;
   surname: string;
-    email: string;        
+  email: string;
   theme_preference: string;
+  language_pref: string;
   created_at: string;
   updated_at: string;
 }
