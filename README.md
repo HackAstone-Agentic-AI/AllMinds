@@ -30,6 +30,19 @@ AllMinds/
 
 ---
 
+## Render Deployment
+
+Render deployment is configured by the root `render.yaml` Blueprint. It creates:
+
+- `allminds-frontend`
+- `allminds-backend`
+- `allminds-agents`
+- `allminds-postgres`
+
+See `docs/DEPLOYMENT_RENDER.md` before deploying. It includes the required Render secrets, first-deploy `onrender.com` URLs, custom domain updates, database migration flow, and Google OAuth callback URLs.
+
+---
+
 ## What Was Built and Changed
 
 ### Agents Service (`apps/agents`)

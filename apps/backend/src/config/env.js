@@ -11,14 +11,11 @@ const isPlaceholder = (value = '') => {
 };
 
 const validateEnv = () => {
-    const required = [
-        'DB_HOST',
-        'DB_PORT',
-        'DB_USER',
-        'DB_PASSWORD',
-        'DB_NAME',
-        'JWT_SECRET',
-    ];
+    const required = ['JWT_SECRET'];
+
+    if (isPlaceholder(process.env.DATABASE_URL)) {
+        required.push('DB_HOST', 'DB_PORT', 'DB_USER', 'DB_PASSWORD', 'DB_NAME');
+    }
 
     const missingRequired = required.filter((key) => isPlaceholder(process.env[key]));
 
