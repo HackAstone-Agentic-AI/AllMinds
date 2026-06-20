@@ -27,6 +27,8 @@ vector_db/
 .codex/
 .runlogs/
 token.pickle
+Credentials.json
+credentials.json
 *.log
 npm-debug.log*
 yarn-debug.log*
