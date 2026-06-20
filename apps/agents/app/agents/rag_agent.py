@@ -28,7 +28,7 @@ def _get_db():
         _db = Chroma.from_documents(
             documents=chunks,
             embedding=embeddings_model,
-            persist_directory="vector_db",
+            persist_directory=str(Path(__file__).resolve().parent / "vector_db"),
         )
     return _db
 

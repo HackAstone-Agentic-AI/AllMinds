@@ -105,7 +105,7 @@ def supervisor_agent(state: dict) -> dict:
         state: {"input": str}  — the teacher's natural language request
     Returns:
         {"decision": str}      — one of: general | lesson | multimodal |
-                                          schedule | visual | analytics
+                                          schedule | visual | analytics | rag
     """
     user_input = state.get("input", "").strip()
 

@@ -134,13 +134,16 @@ def lesson_planner_agent(state: dict) -> dict:
             "profile":        str,           # Optional — e.g. "autistic, dyslexic"
             "interests":      str,           # Optional — e.g. "space, Lego"
             "session_length": int,           # Optional — target minutes, default 15–20
+            "rag_context":    str,           # Optional — DCAPS curriculum text injected
+                                            #             by the router; absent when the
+                                            #             query has no curriculum keywords
         }
 
     Returns:
         {
             "output":  str,    # Full structured lesson plan
             "topic":   str,    # Echo of the input topic (for logging/chaining)
-            "status":  str,    # "ok" | "no_input"
+            "status":  str,    # "ok" | "no_input" | "error"
         }
     """
     user_input = state.get("input", "").strip()
@@ -164,7 +167,7 @@ def lesson_planner_agent(state: dict) -> dict:
             "status": "error",
         }
 
-    rag_context = state.get("rag_context", "").strip()
+    rag_context = (state.get("rag_context") or "").strip()
     rag_section = (
         f"\n\nCURRICULUM CONTEXT (from DCAPS — use this to ground the lesson in the formal curriculum):\n{rag_context}"
         if rag_context else ""

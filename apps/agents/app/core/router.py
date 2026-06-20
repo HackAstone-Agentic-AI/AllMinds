@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 from app.core.supervisor import supervisor_agent
 from app.core.guardrails import check_input, check_output
@@ -9,6 +10,8 @@ from app.agents.visual_support_agent import visual_support_agent
 from app.agents.analytics_agent import analytics_agent
 from app.agents.rag_agent import rag_agent
 
+logger = logging.getLogger(__name__)
+
 AGENT_MAP = {
     "general":    general_agent,
     "lesson":     lesson_planner_agent,
@@ -19,13 +22,46 @@ AGENT_MAP = {
     "rag":        rag_agent,
 }
 
+# Trigger RAG enrichment only for lesson requests that plausibly reference the
+# formal curriculum, avoiding an unnecessary LLM + vector-search call otherwise.
+# Uses SA-curriculum-specific terms rather than common English words to minimise
+# false positives (e.g. "outcome", "subject", "senior" were removed).
+_CURRICULUM_KEYWORDS = frozenset([
+    "grade", "phase", "curriculum", "dcaps", "caps", "foundation",
+    "numeracy", "literacy", "life skills", "home language", "fal",
+])
+
+
+def _needs_rag_enrichment(user_input: str) -> bool:
+    lower = user_input.lower()
+    return any(kw in lower for kw in _CURRICULUM_KEYWORDS)
+
 
 def _enrich_with_rag(state: dict) -> dict:
     """Query the RAG agent for DCAPS curriculum context and inject it into state."""
-    rag_query = f"What does DCAPS say about {state['input']}?"
+    user_input = state.get("input", "")
+    if not user_input or not _needs_rag_enrichment(user_input):
+        return state
+
+    # Frame as a curriculum question for better vector retrieval.
+    # Skip the wrapper when the input is already a question to avoid double-framing.
+    if user_input.rstrip().endswith("?"):
+        rag_query = user_input
+    else:
+        rag_query = f"What does DCAPS say about {user_input}?"
+
     rag_result = rag_agent({"input": rag_query})
     if rag_result.get("status") == "ok":
-        state = {**state, "rag_context": rag_result.get("output", "")}
+        rag_output = rag_result.get("output", "").strip()
+        if rag_output:
+            return {**state, "rag_context": rag_output}
+        logger.warning("RAG enrichment returned empty output despite status='ok'")
+    else:
+        logger.warning(
+            "RAG enrichment failed (status=%s): %s",
+            rag_result.get("status"),
+            rag_result.get("output", ""),
+        )
     return state
 
 
@@ -55,7 +91,12 @@ def run_multi_agent(
         decision = supervisor_agent(state).get("decision", "general")
 
         if decision == "lesson":
-            state = _enrich_with_rag(state)
+            try:
+                state = _enrich_with_rag(state)
+            except Exception as rag_exc:
+                # Enrichment is best-effort; a failure must not prevent the lesson
+                # plan from being generated.
+                logger.warning("RAG enrichment raised unexpectedly: %s", rag_exc)
 
         agent_fn = AGENT_MAP.get(decision, general_agent)
         result = agent_fn(state)
