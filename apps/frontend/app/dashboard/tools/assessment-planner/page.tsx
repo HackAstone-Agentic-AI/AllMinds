@@ -30,6 +30,7 @@ export default function AssessmentPlannerPage() {
     const token = localStorage.getItem('allminds_token');
     if (!token) {
       router.push('/login');
+      setLoadingProfile(false);
       return;
     }
 
@@ -38,9 +39,9 @@ export default function AssessmentPlannerPage() {
       setTeacherProfile({ id: data.id, surname: data.surname, title: data.title });
     } catch {
       router.push('/login');
+    } finally {
+      setLoadingProfile(false);
     }
-
-    setLoadingProfile(false);
   }, [router]);
 
   useEffect(() => {
@@ -64,10 +65,11 @@ export default function AssessmentPlannerPage() {
         `Create an inclusive assessment and lesson support plan for Grade ${plannerInput.grade} ${plannerInput.subject} on ${plannerInput.topic}. ${supportContext} Keep it practical for a classroom teacher.`,
         {
           thread_id: `assessment-planner-${teacherProfile?.id || 'guest'}`,
+          tool_hint: 'lesson',
         },
       );
 
-      setGeneratedPlan(response.response?.output || 'No plan was returned.');
+      setGeneratedPlan(response.response || 'No plan was returned.');
     } catch (requestError) {
       setError(
         requestError instanceof Error ? requestError.message : 'Failed to generate the plan.',
@@ -193,6 +195,7 @@ export default function AssessmentPlannerPage() {
                 onClick={() => void generatePlan()}
                 disabled={
                   isGenerating ||
+                  loadingProfile ||
                   !plannerInput.subject ||
                   !plannerInput.topic ||
                   !plannerInput.grade

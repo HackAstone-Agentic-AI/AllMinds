@@ -15,6 +15,7 @@ export default function ParentCommunicationPage() {
   const [letterType, setLetterType] = useState<'progress' | 'concern'>('progress');
   const [content, setContent] = useState('');
   const [generating, setGenerating] = useState(false);
+  const [drafting, setDrafting] = useState(false);
   const [message, setMessage] = useState('');
   const router = useRouter();
 
@@ -34,6 +35,38 @@ export default function ParentCommunicationPage() {
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  const draftWithAI = async () => {
+    if (!selectedLearner) return;
+
+    const learner = learners.find((l) => String(l.id) === selectedLearner);
+    const rawId = learner?.anonymous_id ?? `Learner ${selectedLearner}`;
+    const learnerLabel = rawId.replace(/[^a-zA-Z0-9 \-_]/g, '').trim().slice(0, 40) || `Learner ${selectedLearner}`;
+    const typeLabel = letterType === 'progress' ? 'progress report' : 'concern letter';
+
+    setDrafting(true);
+    setMessage('');
+
+    try {
+      const result = await api.chatWithAgent(
+        `Draft a professional, empathetic parent ${typeLabel} for a neurodivergent learner (${learnerLabel}). Use plain language, avoid jargon, and suggest one or two concrete ways the parent can support the learner at home.`,
+        {
+          thread_id: `parent-comm-${selectedLearner}-${letterType}`,
+          tool_hint: 'general',
+        },
+      );
+      const draft: string = result?.response ?? '';
+      if (draft) {
+        setContent(draft);
+      } else {
+        setMessage('No draft was returned. Please try again.');
+      }
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Failed to draft letter.');
+    } finally {
+      setDrafting(false);
+    }
+  };
 
   const generateLetter = async () => {
     if (!selectedLearner || !content.trim()) return;
@@ -209,9 +242,18 @@ export default function ParentCommunicationPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Letter Content
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-slate-700">
+                    Letter Content
+                  </label>
+                  <button
+                    onClick={() => void draftWithAI()}
+                    disabled={drafting || !selectedLearner}
+                    className="text-xs text-blue-600 hover:text-blue-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {drafting ? 'Drafting…' : 'Draft with AI'}
+                  </button>
+                </div>
                 <textarea
                   value={content}
                   onChange={(e) => setContent(e.target.value)}

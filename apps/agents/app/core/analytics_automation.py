@@ -1,9 +1,21 @@
 import os
+import re
 import statistics
 import textwrap
 from datetime import datetime
 from typing import Any
 from app.core.language import resolve_language_code, SA_LANGUAGES
+
+
+def _safe_filename(name: str) -> str:
+    """Return a filename-safe slug: alphanumeric + hyphen + underscore only, max 60 chars."""
+    slug = re.sub(r"[^\w\-]", "_", name).strip("_")
+    return slug[:60] or "learner"
+
+
+def _safe_label(name: str) -> str:
+    """Strip control characters and Unicode line terminators before embedding in text or LLM prompts."""
+    return re.sub(r"[\r\n\t\x00-\x1f\x7f\x85  ]", " ", name).strip()[:80] or "this learner"
 
 try:
     import matplotlib
@@ -124,6 +136,7 @@ def build_charts(learner_name: str, cleaned: list[dict], summary: dict, risk_fla
     if matplotlib is None or plt is None or mpatches is None:
         return {}
 
+    learner_name = _safe_label(learner_name)
     output_dir = "charts"
     os.makedirs(output_dir, exist_ok=True)
     chart_paths = {}
@@ -192,7 +205,7 @@ def build_charts(learner_name: str, cleaned: list[dict], summary: dict, risk_fla
     )
 
     fig1.tight_layout()
-    path1 = os.path.join(output_dir, f"{learner_name.replace(' ', '_')}_progress_over_time.png")
+    path1 = os.path.join(output_dir, f"{_safe_filename(learner_name)}_progress_over_time.png")
     fig1.savefig(path1, dpi=150, bbox_inches="tight")
     plt.close(fig1)
     chart_paths["line_progress_over_time"] = path1
@@ -245,7 +258,7 @@ def build_charts(learner_name: str, cleaned: list[dict], summary: dict, risk_fla
         ax2.legend(handles=[patch], loc="upper right", framealpha=0.85, fontsize=8)
 
     fig2.tight_layout()
-    path2 = os.path.join(output_dir, f"{learner_name.replace(' ', '_')}_subject_averages.png")
+    path2 = os.path.join(output_dir, f"{_safe_filename(learner_name)}_subject_averages.png")
     fig2.savefig(path2, dpi=150, bbox_inches="tight")
     plt.close(fig2)
     chart_paths["bar_subject_average_marks"] = path2
@@ -254,6 +267,7 @@ def build_charts(learner_name: str, cleaned: list[dict], summary: dict, risk_fla
 
 
 def generate_narrative(learner_name: str, summary: dict, risk_flags: list[str], breakdown: list[dict]) -> str:
+    learner_name = _safe_label(learner_name)
     strongest_subject = max(breakdown, key=lambda item: item["average_mark"], default=None)
     weakest_subject = min(breakdown, key=lambda item: item["average_mark"], default=None)
 
@@ -320,7 +334,7 @@ def _translate_analytics_text(text: str, language_pref: str) -> str:
 
 
 def run_analytics_automation(user_input: str, learner_name: str = "", records: list | None = None, language_pref: str = "en") -> dict:
-    learner = learner_name or "Learner"
+    learner = _safe_label(learner_name) if learner_name else "Learner"
     rows = records or []
 
     if not rows:

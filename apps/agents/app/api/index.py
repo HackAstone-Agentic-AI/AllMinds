@@ -1,12 +1,12 @@
 ﻿import re
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 import os
 from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
-from app.core.router import run_multi_agent
+from pydantic import BaseModel, Field, field_validator
+from app.core.router import run_multi_agent, VALID_TOOL_HINTS
 from app.core.guardrails import check_input
 from app.core.language import language_list_for_frontend
 
@@ -37,6 +37,16 @@ class ChatRequest(BaseModel):
     learner_name: str = ""
     records: list[dict[str, Any]] = Field(default_factory=list)
     language_pref: str = "en"
+    tool_hint: Optional[Literal["general", "lesson", "multimodal", "schedule", "visual", "analytics", "rag"]] = None
+
+    @field_validator("tool_hint")
+    @classmethod
+    def validate_tool_hint(cls, v: Optional[str]) -> Optional[str]:
+        # Cross-check against the live AGENT_MAP so a drift between this Literal
+        # and AGENT_MAP raises a clear error rather than silently mis-routing.
+        if v is not None and v not in VALID_TOOL_HINTS:
+            raise ValueError(f"tool_hint must be one of {sorted(VALID_TOOL_HINTS)}")
+        return v
 
 
 def sanitize_input(text: str) -> str:
@@ -88,6 +98,7 @@ async def chat_endpoint(
         learner_name=payload.learner_name,
         records=payload.records,
         language_pref=payload.language_pref,
+        tool_hint=payload.tool_hint,
     )
 
     return {

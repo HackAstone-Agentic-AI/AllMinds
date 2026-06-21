@@ -44,6 +44,7 @@ export default function VisualSupportPage() {
     const token = localStorage.getItem('allminds_token');
     if (!token) {
       router.push('/login');
+      setLoadingProfile(false);
       return;
     }
 
@@ -52,9 +53,9 @@ export default function VisualSupportPage() {
       setTeacherProfile({ id: data.id, surname: data.surname, title: data.title });
     } catch {
       router.push('/login');
+    } finally {
+      setLoadingProfile(false);
     }
-
-    setLoadingProfile(false);
   }, [router]);
 
   useEffect(() => {
@@ -81,12 +82,13 @@ export default function VisualSupportPage() {
     try {
       const response = await api.chatWithAgent(trimmed, {
         thread_id: `visual-support-${teacherProfile?.id || 'guest'}`,
+        tool_hint: 'visual',
       });
 
       const assistantMessage: ChatMessage = {
         id: Date.now() + 1,
         role: 'assistant',
-        content: response.response?.output || 'No response was returned.',
+        content: response.response || 'No response was returned.',
       };
 
       setMessages((current) => [...current, assistantMessage]);
@@ -189,16 +191,17 @@ export default function VisualSupportPage() {
                 value={input}
                   onChange={(event) => setInput(event.target.value)}
                   onKeyDown={(event) => {
-                    if (event.key === 'Enter' && !isSending) {
+                    if (event.key === 'Enter' && !isSending && !loadingProfile) {
                       void sendMessage(input);
                     }
                   }}
                   className="flex-1 px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
                   placeholder="Describe a learner need, routine, or classroom challenge"
+                  disabled={loadingProfile}
                 />
               <button
                 onClick={() => void sendMessage(input)}
-                disabled={isSending || !input.trim()}
+                disabled={isSending || !input.trim() || loadingProfile}
                 className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Send className="w-5 h-5" />
@@ -215,7 +218,8 @@ export default function VisualSupportPage() {
                   <button
                     key={prompt}
                     onClick={() => void sendMessage(prompt)}
-                    className="w-full text-left p-4 rounded-lg border border-slate-200 hover:border-blue-300 hover:bg-blue-50 transition"
+                    disabled={loadingProfile}
+                    className="w-full text-left p-4 rounded-lg border border-slate-200 hover:border-blue-300 hover:bg-blue-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <p className="text-sm text-slate-700">{prompt}</p>
                   </button>

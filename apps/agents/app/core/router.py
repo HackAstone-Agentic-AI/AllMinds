@@ -1,5 +1,5 @@
 import logging
-from typing import Any
+from typing import Any, Optional
 from app.core.supervisor import supervisor_agent
 from app.core.guardrails import check_input, check_output
 from app.agents.general_agent import general_agent
@@ -21,6 +21,10 @@ AGENT_MAP = {
     "analytics":  analytics_agent,
     "rag":        rag_agent,
 }
+
+# Single source of truth for valid tool hints — derived from AGENT_MAP so they
+# stay in sync automatically. Import this in index.py for request validation.
+VALID_TOOL_HINTS: frozenset[str] = frozenset(AGENT_MAP.keys())
 
 # Trigger RAG enrichment only for lesson requests that plausibly reference the
 # formal curriculum, avoiding an unnecessary LLM + vector-search call otherwise.
@@ -71,6 +75,7 @@ def run_multi_agent(
     learner_name: str = "",
     records: list[dict[str, Any]] = None,
     language_pref: str = "en",
+    tool_hint: Optional[str] = None,
 ) -> str:
     if records is None:
         records = []
@@ -88,7 +93,12 @@ def run_multi_agent(
     }
 
     try:
-        decision = supervisor_agent(state).get("decision", "general")
+        # If the calling component explicitly names its tool, skip the LLM
+        # classifier and route directly. Falls back to supervisor for unknown hints.
+        if tool_hint and tool_hint in AGENT_MAP:
+            decision = tool_hint
+        else:
+            decision = supervisor_agent(state).get("decision", "general")
 
         if decision == "lesson":
             try:
