@@ -16,6 +16,8 @@ import {
 } from 'lucide-react';
 import SettingsPanel from './SettingsPanel';
 import AgentChat from './AgentChat';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
+import { LANGUAGES } from '@/lib/i18n/translations';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -28,6 +30,7 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
   const [showNotifications, setShowNotifications] = useState(false);
   const [showLanguageMenu, setShowLanguageMenu] = useState(false);
   const router = useRouter();
+  const { language, setLanguage, t } = useLanguage();
 
   const loadProfile = useCallback(async () => {
     const token = localStorage.getItem('allminds_token');
@@ -56,12 +59,12 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
   };
 
   const tabs = [
-    { id: 'home', label: 'Home', icon: Home, href: '/dashboard' },
-    { id: 'tools', label: 'Tools', icon: Wrench, href: '/dashboard/tools' },
-    { id: 'community', label: 'Community', icon: Users, href: '/dashboard/community' },
+    { id: 'home', label: t('nav.home'), icon: Home, href: '/dashboard' },
+    { id: 'tools', label: t('nav.tools'), icon: Wrench, href: '/dashboard/tools' },
+    { id: 'community', label: t('nav.community'), icon: Users, href: '/dashboard/community' },
     {
       id: 'professional-development',
-      label: 'Professional Development',
+      label: t('nav.professionalDevelopment'),
       icon: GraduationCap,
       href: '/dashboard/professional-development',
     },
@@ -105,21 +108,29 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
                     setShowLanguageMenu((current) => !current);
                     setShowNotifications(false);
                   }}
-                  className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition"
+                  className="flex items-center gap-1 p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition"
                 >
                   <Globe className="w-5 h-5" />
+                  <span className="hidden sm:inline text-xs font-medium">
+                    {LANGUAGES.find((l) => l.code === language)?.label}
+                  </span>
                 </button>
                 {showLanguageMenu && (
-                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-slate-200 py-2">
-                    <button className="w-full px-4 py-2 text-left hover:bg-slate-50 transition">
-                      English
-                    </button>
-                    <button className="w-full px-4 py-2 text-left hover:bg-slate-50 transition">
-                      Espanol
-                    </button>
-                    <button className="w-full px-4 py-2 text-left hover:bg-slate-50 transition">
-                      Francais
-                    </button>
+                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-slate-200 py-2 max-h-80 overflow-y-auto">
+                    {LANGUAGES.map((lang) => (
+                      <button
+                        key={lang.code}
+                        onClick={() => {
+                          setLanguage(lang.code);
+                          setShowLanguageMenu(false);
+                        }}
+                        className={`w-full px-4 py-2 text-left hover:bg-slate-50 transition text-sm ${
+                          language === lang.code ? 'font-semibold text-blue-600' : 'text-slate-700'
+                        }`}
+                      >
+                        {lang.label}
+                      </button>
+                    ))}
                   </div>
                 )}
               </div>
@@ -138,11 +149,11 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
                 {showNotifications && (
                   <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-slate-200 py-2">
                     <div className="px-4 py-2 border-b border-slate-200">
-                      <h3 className="font-semibold text-slate-800">Notifications</h3>
+                      <h3 className="font-semibold text-slate-800">{t('notifications.title')}</h3>
                     </div>
                     <div className="max-h-96 overflow-y-auto">
                       <div className="px-4 py-3 hover:bg-slate-50 transition">
-                        <p className="text-sm text-slate-600">No new notifications</p>
+                        <p className="text-sm text-slate-600">{t('notifications.empty')}</p>
                       </div>
                     </div>
                   </div>
