@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { api } from '@/lib/api';
 import { TeacherProfile } from '@/types/database';
 import {
@@ -76,7 +77,21 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-8">
-              <h1 className="text-2xl font-bold text-slate-800">All Minds</h1>
+              <button
+                onClick={() => router.push('/dashboard')}
+                className="flex items-center gap-2 rounded-lg p-1 text-left transition hover:bg-slate-50"
+                aria-label="Go to All Minds dashboard"
+              >
+                <Image
+                  src="/allminds-logo.png"
+                  alt=""
+                  width={38}
+                  height={38}
+                  className="h-9 w-9 object-contain"
+                  priority
+                />
+                <span className="text-xl font-bold text-slate-800">All Minds</span>
+              </button>
               <nav className="hidden md:flex space-x-1">
                 {tabs.map((tab) => (
                   <button
