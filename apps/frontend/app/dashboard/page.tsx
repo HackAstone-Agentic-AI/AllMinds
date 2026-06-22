@@ -1,7 +1,24 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import {
+  Activity as ActivityIcon,
+  CalendarDays,
+  CheckCircle2,
+  ChevronRight,
+  ClipboardCheck,
+  Clock3,
+  FileText,
+  MessageSquareText,
+  Plus,
+  Search,
+  Users,
+  X,
+} from 'lucide-react';
 import DashboardLayout from '@/components/DashboardLayout';
+import { api } from '@/lib/api';
 import {
   Activity,
   LearnerProfile,
@@ -9,27 +26,75 @@ import {
   ParentCommunication,
   TeacherTask,
 } from '@/types/database';
-import { CheckCircle2, ChevronRight, Clock, FileText, Plus, Users } from 'lucide-react';
-import { useRouter } from 'next/navigation';
-import { api } from '@/lib/api';
 
-const taskBadgeStyles: Record<TeacherTask['priority'], string> = {
-  low: 'bg-emerald-100 text-emerald-700',
-  medium: 'bg-amber-100 text-amber-700',
-  high: 'bg-rose-100 text-rose-700',
+type ResourceCategory =
+  | 'learner-profiles'
+  | 'lesson-plans'
+  | 'communications'
+  | 'activity'
+  | 'open-tasks'
+  | 'scheduled-work';
+
+type HistoryItem = {
+  id: string;
+  title: string;
+  subtitle: string;
+  createdAt: string;
+  href: string;
 };
 
-export default function DashboardHome() {
-  const [learnerProfiles, setLearnerProfiles] = useState<Array<LearnerProfile & { id: string }>>(
-    [],
+type ResourceCard = {
+  id: ResourceCategory;
+  title: string;
+  count: number;
+  description: string;
+  emptyMessage: string;
+  icon: React.ComponentType<{ className?: string }>;
+  accent: {
+    icon: string;
+    iconBg: string;
+    selected: string;
+    hover: string;
+  };
+};
+
+const taskBadgeStyles: Record<TeacherTask['priority'], string> = {
+  low: 'bg-emerald-50 text-emerald-700',
+  medium: 'bg-amber-50 text-amber-700',
+  high: 'bg-rose-50 text-rose-700',
+};
+
+const formatDate = (dateString: string) =>
+  new Date(dateString).toLocaleDateString('en-ZA', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+
+const getLearnerName = (learner: LearnerProfile) => {
+  const profile = learner.profile_data || {};
+  return (
+    profile.pseudonym ||
+    profile.fullName ||
+    profile.full_name ||
+    profile.name ||
+    learner.anonymous_id
   );
-  const [lessonPlans, setLessonPlans] = useState<Array<LessonPlan & { id: string }>>([]);
-  const [parentCommunications, setParentCommunications] = useState<
-    Array<ParentCommunication & { id: string }>
-  >([]);
+};
+
+const getLessonTitle = (plan: LessonPlan) => plan.title || 'Untitled lesson plan';
+
+export default function DashboardHome() {
+  const [learnerProfiles, setLearnerProfiles] = useState<LearnerProfile[]>([]);
+  const [lessonPlans, setLessonPlans] = useState<LessonPlan[]>([]);
+  const [parentCommunications, setParentCommunications] = useState<ParentCommunication[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [tasks, setTasks] = useState<TeacherTask[]>([]);
+  const [selectedCategory, setSelectedCategory] =
+    useState<ResourceCategory>('learner-profiles');
+  const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
+  const [showTaskForm, setShowTaskForm] = useState(false);
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDescription, setTaskDescription] = useState('');
   const [taskPriority, setTaskPriority] = useState<TeacherTask['priority']>('medium');
@@ -47,7 +112,7 @@ export default function DashboardHome() {
 
     setLoading(true);
     try {
-      const [learners, lessonPlansData, parentComms, activitiesData, tasksData] =
+      const [learners, plans, communications, activityFeed, teacherTasks] =
         await Promise.all([
           api.getLearners(),
           api.getLessonPlans(),
@@ -56,28 +121,13 @@ export default function DashboardHome() {
           api.getTasks(),
         ]);
 
-      setLearnerProfiles(
-        learners.map((learner: LearnerProfile) => ({
-          ...learner,
-          id: String(learner.id),
-        })),
-      );
-      setLessonPlans(
-        lessonPlansData.map((plan: LessonPlan) => ({
-          ...plan,
-          id: String(plan.id),
-        })),
-      );
-      setParentCommunications(
-        parentComms.map((communication: ParentCommunication) => ({
-          ...communication,
-          id: String(communication.id),
-        })),
-      );
-      setActivities(activitiesData);
-      setTasks(tasksData);
-    } catch (err) {
-      console.error(err);
+      setLearnerProfiles(learners);
+      setLessonPlans(plans);
+      setParentCommunications(communications);
+      setActivities(activityFeed);
+      setTasks(teacherTasks);
+    } catch (error) {
+      console.error('Failed to load dashboard:', error);
     } finally {
       setLoading(false);
     }
@@ -87,34 +137,174 @@ export default function DashboardHome() {
     void loadDashboardData();
   }, [loadDashboardData]);
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
-  };
+  const historyMap = useMemo<Record<ResourceCategory, HistoryItem[]>>(
+    () => ({
+      'learner-profiles': learnerProfiles.map((learner) => ({
+        id: String(learner.id),
+        title: String(getLearnerName(learner)),
+        subtitle: learner.anonymous_id,
+        createdAt: learner.created_at,
+        href: `/dashboard/tools/learner-profiles?learnerId=${learner.id}`,
+      })),
+      'lesson-plans': lessonPlans.map((plan) => ({
+        id: String(plan.id),
+        title: getLessonTitle(plan),
+        subtitle: 'Lesson plan',
+        createdAt: plan.created_at,
+        href: `/dashboard/tools/assessment-planner?resource=lesson-plan&id=${plan.id}`,
+      })),
+      communications: parentCommunications.map((communication) => ({
+        id: String(communication.id),
+        title:
+          communication.type === 'progress' ? 'Progress communication' : 'Concern communication',
+        subtitle: communication.learner_anonymous_id || 'Parent communication',
+        createdAt: communication.created_at,
+        href: `/dashboard/community/parent-communication?id=${communication.id}`,
+      })),
+      activity: activities.map((activity) => ({
+        id: String(activity.id),
+        title: activity.description,
+        subtitle: activity.activity_type.replace(/_/g, ' '),
+        createdAt: activity.created_at,
+        href: '/dashboard',
+      })),
+      'open-tasks': tasks
+        .filter((task) => task.status !== 'completed')
+        .map((task) => ({
+          id: String(task.id),
+          title: task.title,
+          subtitle: `${task.priority} priority - ${task.status.replace('_', ' ')}`,
+          createdAt: task.due_date || task.created_at,
+          href: '/dashboard',
+        })),
+      'scheduled-work': tasks
+        .filter((task) => Boolean(task.due_date))
+        .map((task) => ({
+          id: String(task.id),
+          title: task.title,
+          subtitle: task.description || 'Scheduled teacher task',
+          createdAt: task.due_date || task.created_at,
+          href: '/dashboard/tools/schedule-tracking',
+        })),
+    }),
+    [activities, learnerProfiles, lessonPlans, parentCommunications, tasks],
+  );
 
-  const formatTime = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-    });
-  };
+  const cards = useMemo<ResourceCard[]>(
+    () => [
+      {
+        id: 'learner-profiles',
+        title: 'Learner Profiles',
+        count: learnerProfiles.length,
+        description: 'Anonymised learner records',
+        emptyMessage: 'No learner profiles have been added yet.',
+        icon: Users,
+        accent: {
+          icon: 'text-blue-700',
+          iconBg: 'bg-blue-50',
+          selected: 'border-blue-400 bg-blue-50',
+          hover: 'hover:border-blue-300',
+        },
+      },
+      {
+        id: 'lesson-plans',
+        title: 'Lesson Plans',
+        count: lessonPlans.length,
+        description: 'Generated teaching resources',
+        emptyMessage: 'No lesson plans have been generated yet.',
+        icon: FileText,
+        accent: {
+          icon: 'text-emerald-700',
+          iconBg: 'bg-emerald-50',
+          selected: 'border-emerald-400 bg-emerald-50',
+          hover: 'hover:border-emerald-300',
+        },
+      },
+      {
+        id: 'communications',
+        title: 'Communications',
+        count: parentCommunications.length,
+        description: 'Progress and concern updates',
+        emptyMessage: 'No parent communications have been created yet.',
+        icon: MessageSquareText,
+        accent: {
+          icon: 'text-cyan-700',
+          iconBg: 'bg-cyan-50',
+          selected: 'border-cyan-400 bg-cyan-50',
+          hover: 'hover:border-cyan-300',
+        },
+      },
+      {
+        id: 'activity',
+        title: 'Recent Activity',
+        count: activities.length,
+        description: 'Updates across your workspace',
+        emptyMessage: 'No workspace activity has been recorded yet.',
+        icon: ActivityIcon,
+        accent: {
+          icon: 'text-amber-700',
+          iconBg: 'bg-amber-50',
+          selected: 'border-amber-400 bg-amber-50',
+          hover: 'hover:border-amber-300',
+        },
+      },
+      {
+        id: 'open-tasks',
+        title: 'Open Tasks',
+        count: tasks.filter((task) => task.status !== 'completed').length,
+        description: 'Pending and active teacher work',
+        emptyMessage: 'You have no open tasks.',
+        icon: ClipboardCheck,
+        accent: {
+          icon: 'text-rose-700',
+          iconBg: 'bg-rose-50',
+          selected: 'border-rose-400 bg-rose-50',
+          hover: 'hover:border-rose-300',
+        },
+      },
+      {
+        id: 'scheduled-work',
+        title: 'Scheduled Work',
+        count: tasks.filter((task) => Boolean(task.due_date)).length,
+        description: 'Tasks with dates and reminders',
+        emptyMessage: 'No dated tasks have been scheduled yet.',
+        icon: CalendarDays,
+        accent: {
+          icon: 'text-[#087d8c]',
+          iconBg: 'bg-teal-50',
+          selected: 'border-[#38a8b5] bg-teal-50',
+          hover: 'hover:border-[#7bc6ce]',
+        },
+      },
+    ],
+    [activities.length, learnerProfiles.length, lessonPlans.length, parentCommunications.length, tasks],
+  );
 
-  const getTaskActionLabel = (status: TeacherTask['status']) => {
-    if (status === 'pending') return 'Start';
-    if (status === 'in_progress') return 'Complete';
-    return 'Completed';
-  };
+  const selectedCard = cards.find((card) => card.id === selectedCategory) || cards[0];
+  const filteredHistory = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
+    const items = historyMap[selectedCategory];
+    if (!query) return items;
 
-  const getNextTaskStatus = (status: TeacherTask['status']) => {
-    if (status === 'pending') return 'in_progress';
-    if (status === 'in_progress') return 'completed';
-    return 'completed';
-  };
+    return items.filter(
+      (item) =>
+        item.title.toLowerCase().includes(query) ||
+        item.subtitle.toLowerCase().includes(query),
+    );
+  }, [historyMap, searchTerm, selectedCategory]);
+
+  const upcomingTasks = useMemo(
+    () =>
+      tasks
+        .filter((task) => task.status !== 'completed')
+        .sort((a, b) => {
+          if (!a.due_date) return 1;
+          if (!b.due_date) return -1;
+          return new Date(a.due_date).getTime() - new Date(b.due_date).getTime();
+        })
+        .slice(0, 5),
+    [tasks],
+  );
 
   const handleCreateTask = async () => {
     if (!taskTitle.trim()) {
@@ -124,7 +314,6 @@ export default function DashboardHome() {
 
     setSavingTask(true);
     setTaskMessage('');
-
     try {
       await api.createTask({
         title: taskTitle.trim(),
@@ -132,12 +321,12 @@ export default function DashboardHome() {
         priority: taskPriority,
         due_date: taskDueDate || null,
       });
-
       setTaskTitle('');
       setTaskDescription('');
       setTaskPriority('medium');
       setTaskDueDate('');
       setTaskMessage('Task created.');
+      setShowTaskForm(false);
       await loadDashboardData();
     } catch (error) {
       console.error('Failed to create task:', error);
@@ -148,12 +337,9 @@ export default function DashboardHome() {
   };
 
   const handleAdvanceTask = async (task: TeacherTask) => {
-    if (task.status === 'completed') {
-      return;
-    }
-
+    const nextStatus = task.status === 'pending' ? 'in_progress' : 'completed';
     try {
-      await api.updateTask(task.id, { status: getNextTaskStatus(task.status) });
+      await api.updateTask(task.id, { status: nextStatus });
       await loadDashboardData();
     } catch (error) {
       console.error('Failed to update task:', error);
@@ -164,277 +350,284 @@ export default function DashboardHome() {
   return (
     <DashboardLayout activeTab="home">
       <div className="space-y-6">
-        <div>
-          <h2 className="text-3xl font-bold text-slate-800">Welcome Back</h2>
-          <p className="text-slate-600 mt-1">
-            Here&apos;s what&apos;s happening with your students today
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium text-slate-600">Total Learner Profiles</h3>
-              <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                <Users className="w-5 h-5 text-blue-600" />
-              </div>
-            </div>
-            <p className="text-3xl font-bold text-slate-800">{learnerProfiles.length}</p>
-            <p className="text-xs text-slate-500 mt-2">Learners currently in your dashboard</p>
-          </div>
-
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium text-slate-600">Lesson Plans</h3>
-              <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                <FileText className="w-5 h-5 text-green-600" />
-              </div>
-            </div>
-            <p className="text-3xl font-bold text-slate-800">{lessonPlans.length}</p>
-            <p className="text-xs text-slate-500 mt-2">Generated lesson plans</p>
-          </div>
-
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium text-slate-600">Recent Activities</h3>
-              <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center">
-                <Clock className="w-5 h-5 text-amber-600" />
-              </div>
-            </div>
-            <p className="text-3xl font-bold text-slate-800">{activities.length}</p>
-            <p className="text-xs text-slate-500 mt-2">Tracked updates from your workspace</p>
-          </div>
-
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium text-slate-600">Open Tasks</h3>
-              <div className="w-10 h-10 bg-violet-100 rounded-lg flex items-center justify-center">
-                <CheckCircle2 className="w-5 h-5 text-violet-600" />
-              </div>
-            </div>
-            <p className="text-3xl font-bold text-slate-800">
-              {tasks.filter((task) => task.status !== 'completed').length}
+        <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-[#087d8c]">Teacher overview</p>
+            <h2 className="mt-1 text-3xl font-bold text-slate-900">Welcome back</h2>
+            <p className="mt-1 text-slate-600">
+              Open recent resources, check your workload, and continue where you left off.
             </p>
-            <p className="text-xs text-slate-500 mt-2">Pending and in-progress tasks</p>
           </div>
-        </div>
+          <Link
+            href="/dashboard/tools"
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#0b4f5c] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#083f49]"
+          >
+            Open AI tools
+            <ChevronRight className="h-4 w-4" />
+          </Link>
+        </header>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-            <h3 className="text-lg font-semibold text-slate-800 mb-4">Parent Communications</h3>
-            {loading ? (
-              <div className="text-center py-8 text-slate-500">Loading...</div>
-            ) : parentCommunications.length === 0 ? (
-              <div className="text-center py-8 text-slate-500">
-                <p>No parent communications yet</p>
-                <p className="text-sm mt-2">Communication history will appear here</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {parentCommunications.map((communication) => (
-                  <div
-                    key={communication.id}
-                    className="flex items-start gap-3 p-3 hover:bg-slate-50 rounded-lg transition"
-                  >
-                    <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-slate-800 line-clamp-2">
-                        {communication.content}
-                      </p>
-                      <p className="text-xs text-slate-500 mt-1">
-                        {communication.type === 'progress' ? 'Progress update' : 'Concern'}
-                      </p>
-                      <p className="text-xs text-slate-500 mt-1">
-                        {formatDate(communication.created_at)} at{' '}
-                        {formatTime(communication.created_at)}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+        <section
+          className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3"
+          aria-label="Workspace resources"
+        >
+          {cards.map((card) => {
+            const Icon = card.icon;
+            const isSelected = card.id === selectedCategory;
 
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-slate-800">Upcoming Tasks</h3>
-              <span className="text-sm text-slate-500">
-                {tasks.filter((task) => task.status !== 'completed').length} open
-              </span>
-            </div>
-
-            <div className="space-y-3 mb-5">
-              <input
-                value={taskTitle}
-                onChange={(event) => setTaskTitle(event.target.value)}
-                placeholder="Task title"
-                className="w-full rounded-lg border border-slate-300 px-4 py-3 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
-              />
-              <textarea
-                value={taskDescription}
-                onChange={(event) => setTaskDescription(event.target.value)}
-                placeholder="Add a note or reminder"
-                rows={3}
-                className="w-full rounded-lg border border-slate-300 px-4 py-3 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
-              />
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <select
-                  value={taskPriority}
-                  onChange={(event) =>
-                    setTaskPriority(event.target.value as TeacherTask['priority'])
-                  }
-                  className="w-full rounded-lg border border-slate-300 px-4 py-3 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="low">Low priority</option>
-                  <option value="medium">Medium priority</option>
-                  <option value="high">High priority</option>
-                </select>
-                <input
-                  type="date"
-                  value={taskDueDate}
-                  onChange={(event) => setTaskDueDate(event.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-4 py-3 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
+            return (
               <button
-                onClick={handleCreateTask}
-                disabled={savingTask}
-                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                key={card.id}
+                type="button"
+                onClick={() => {
+                  setSelectedCategory(card.id);
+                  setSearchTerm('');
+                }}
+                className={`min-h-36 rounded-lg border-2 p-5 text-left transition ${
+                  isSelected
+                    ? card.accent.selected
+                    : `border-slate-200 bg-white ${card.accent.hover} hover:shadow-sm`
+                }`}
+                aria-pressed={isSelected}
               >
-                <Plus className="h-4 w-4" />
-                {savingTask ? 'Saving...' : 'Add Task'}
-              </button>
-              {taskMessage && <p className="text-sm text-slate-600">{taskMessage}</p>}
-            </div>
-
-            {loading ? (
-              <div className="text-center py-8 text-slate-500">Loading...</div>
-            ) : tasks.length === 0 ? (
-              <div className="text-center py-8 text-slate-500">
-                <p>No upcoming tasks</p>
-                <p className="text-sm mt-2">Create tasks to keep track of your work</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {tasks.slice(0, 6).map((task) => (
-                  <div key={task.id} className="rounded-lg border border-slate-200 p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h4 className="font-medium text-slate-800">{task.title}</h4>
-                          <span
-                            className={`rounded-full px-2 py-1 text-[11px] font-medium uppercase tracking-wide ${taskBadgeStyles[task.priority]}`}
-                          >
-                            {task.priority}
-                          </span>
-                          <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-slate-600">
-                            {task.status.replace('_', ' ')}
-                          </span>
-                        </div>
-                        {task.description && (
-                          <p className="mt-2 text-sm text-slate-600">{task.description}</p>
-                        )}
-                        <p className="mt-2 text-xs text-slate-500">
-                          {task.due_date
-                            ? `Due ${formatDate(task.due_date)}`
-                            : `Created ${formatDate(task.created_at)}`}
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => handleAdvanceTask(task)}
-                        disabled={task.status === 'completed'}
-                        className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-200 disabled:cursor-default disabled:opacity-60"
-                      >
-                        {getTaskActionLabel(task.status)}
-                      </button>
-                    </div>
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-medium text-slate-600">{card.title}</p>
+                    <p className="mt-2 text-3xl font-bold text-slate-900">{card.count}</p>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-            <h3 className="text-lg font-semibold text-slate-800 mb-4">
-              Recent Activity Feed ({activities.length})
-            </h3>
-
-            {loading ? (
-              <div className="text-center py-8 text-slate-500">Loading...</div>
-            ) : activities.length === 0 ? (
-              <div className="text-center py-8 text-slate-500">
-                <Clock className="w-12 h-12 mx-auto mb-3 text-slate-400" />
-                <p className="font-medium">No recent activity yet</p>
-                <p className="text-sm mt-2">Your learner updates and task changes will appear here</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {activities.map((activity) => (
                   <div
-                    key={activity.id}
-                    className="flex items-start gap-3 rounded-lg border border-slate-200 p-4"
+                    className={`flex h-10 w-10 items-center justify-center rounded-lg ${card.accent.iconBg}`}
                   >
-                    <div className="mt-2 h-2 w-2 rounded-full bg-amber-500" />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-slate-800">{activity.description}</p>
-                      <p className="mt-1 text-xs uppercase tracking-wide text-slate-500">
-                        {activity.activity_type.replace(/_/g, ' ')}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        {formatDate(activity.created_at)} at {formatTime(activity.created_at)}
-                      </p>
-                    </div>
+                    <Icon className={`h-5 w-5 ${card.accent.icon}`} />
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-slate-800">
-                Lesson Plans ({lessonPlans.length})
-              </h3>
-              <button className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
-                View All
-                <ChevronRight className="w-4 h-4" />
+                </div>
+                <p className="mt-3 text-sm text-slate-500">{card.description}</p>
               </button>
-            </div>
+            );
+          })}
+        </section>
 
-            {loading ? (
-              <div className="text-center py-8 text-slate-500">Loading...</div>
-            ) : lessonPlans.length === 0 ? (
-              <div className="text-center py-8 text-slate-500">
-                <FileText className="w-12 h-12 mx-auto mb-3 text-slate-400" />
-                <p className="font-medium">No lesson plans yet</p>
-                <p className="text-sm mt-2">
-                  Use the Tools section to generate your first lesson plan
+        <section className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.75fr)]">
+          <div className="rounded-lg border border-slate-200 bg-white">
+            <div className="flex flex-col gap-4 border-b border-slate-200 p-5 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">{selectedCard.title}</h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  Search and open your latest workspace items.
                 </p>
               </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {lessonPlans.slice(0, 6).map((plan) => (
-                  <div
-                    key={plan.id}
-                    className="border border-slate-200 rounded-lg p-4 hover:border-blue-300 hover:shadow-md transition cursor-pointer"
+              <div className="relative w-full sm:w-72">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  placeholder={`Search ${selectedCard.title.toLowerCase()}`}
+                  className="w-full rounded-lg border border-slate-300 bg-white py-2.5 pl-9 pr-3 text-sm outline-none transition focus:border-[#087d8c] focus:ring-2 focus:ring-[#087d8c]/20"
+                />
+              </div>
+            </div>
+
+            <div className="min-h-72 p-2">
+              {loading ? (
+                <div className="flex min-h-64 items-center justify-center text-sm text-slate-500">
+                  Loading workspace...
+                </div>
+              ) : filteredHistory.length === 0 ? (
+                <div className="flex min-h-64 flex-col items-center justify-center px-6 text-center">
+                  <selectedCard.icon className="h-9 w-9 text-slate-300" />
+                  <p className="mt-3 font-medium text-slate-700">{selectedCard.emptyMessage}</p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    New items will appear here automatically.
+                  </p>
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {filteredHistory.slice(0, 10).map((item) => (
+                    <Link
+                      key={`${selectedCategory}-${item.id}`}
+                      href={item.href}
+                      className="flex items-start justify-between gap-4 rounded-md px-4 py-4 transition hover:bg-slate-50"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-slate-900">{item.title}</p>
+                        <p className="mt-1 truncate text-sm capitalize text-slate-500">
+                          {item.subtitle}
+                        </p>
+                        <p className="mt-2 text-xs text-slate-400">
+                          {formatDate(item.createdAt)}
+                        </p>
+                      </div>
+                      <ChevronRight className="mt-1 h-4 w-4 flex-none text-slate-400" />
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 bg-white">
+            <div className="flex items-center justify-between border-b border-slate-200 p-5">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">Upcoming tasks</h3>
+                <p className="mt-1 text-sm text-slate-500">{upcomingTasks.length} shown</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowTaskForm((current) => !current);
+                  setTaskMessage('');
+                }}
+                className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#0b4f5c] text-white transition hover:bg-[#083f49]"
+                aria-label={showTaskForm ? 'Close task form' : 'Add task'}
+                title={showTaskForm ? 'Close task form' : 'Add task'}
+              >
+                {showTaskForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+              </button>
+            </div>
+
+            {showTaskForm && (
+              <div className="space-y-3 border-b border-slate-200 bg-slate-50 p-5">
+                <input
+                  value={taskTitle}
+                  onChange={(event) => setTaskTitle(event.target.value)}
+                  placeholder="Task title"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none transition focus:border-[#087d8c] focus:ring-2 focus:ring-[#087d8c]/20"
+                />
+                <textarea
+                  value={taskDescription}
+                  onChange={(event) => setTaskDescription(event.target.value)}
+                  placeholder="Optional note"
+                  rows={2}
+                  className="w-full resize-none rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none transition focus:border-[#087d8c] focus:ring-2 focus:ring-[#087d8c]/20"
+                />
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <select
+                    value={taskPriority}
+                    onChange={(event) =>
+                      setTaskPriority(event.target.value as TeacherTask['priority'])
+                    }
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none transition focus:border-[#087d8c] focus:ring-2 focus:ring-[#087d8c]/20"
                   >
-                    <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <FileText className="w-5 h-5 text-blue-600" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h4 className="font-medium text-slate-800 truncate">{plan.title}</h4>
-                        <p className="text-xs text-slate-500 mt-1">{formatDate(plan.created_at)}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                    <option value="low">Low priority</option>
+                    <option value="medium">Medium priority</option>
+                    <option value="high">High priority</option>
+                  </select>
+                  <input
+                    type="date"
+                    value={taskDueDate}
+                    onChange={(event) => setTaskDueDate(event.target.value)}
+                    className="w-full min-w-0 rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none transition focus:border-[#087d8c] focus:ring-2 focus:ring-[#087d8c]/20"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCreateTask}
+                  disabled={savingTask}
+                  className="w-full rounded-lg bg-[#0b4f5c] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#083f49] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {savingTask ? 'Saving...' : 'Save task'}
+                </button>
+                {taskMessage && <p className="text-sm text-slate-600">{taskMessage}</p>}
               </div>
             )}
+
+            <div className="p-2">
+              {loading ? (
+                <div className="flex min-h-64 items-center justify-center text-sm text-slate-500">
+                  Loading tasks...
+                </div>
+              ) : upcomingTasks.length === 0 ? (
+                <div className="flex min-h-64 flex-col items-center justify-center px-5 text-center">
+                  <CheckCircle2 className="h-9 w-9 text-emerald-400" />
+                  <p className="mt-3 font-medium text-slate-700">Your task list is clear</p>
+                  <p className="mt-1 text-sm text-slate-500">Add a task when something comes up.</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {upcomingTasks.map((task) => (
+                    <div key={task.id} className="px-3 py-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-medium text-slate-900">{task.title}</p>
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${taskBadgeStyles[task.priority]}`}
+                            >
+                              {task.priority}
+                            </span>
+                          </div>
+                          {task.description && (
+                            <p className="mt-1 line-clamp-2 text-sm text-slate-500">
+                              {task.description}
+                            </p>
+                          )}
+                          <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-400">
+                            <Clock3 className="h-3.5 w-3.5" />
+                            {task.due_date ? `Due ${formatDate(task.due_date)}` : 'No due date'}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleAdvanceTask(task)}
+                          className="flex-none rounded-md bg-slate-100 px-2.5 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-200"
+                        >
+                          {task.status === 'pending' ? 'Start' : 'Complete'}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-slate-200 p-4">
+              <Link
+                href="/dashboard/tools/schedule-tracking"
+                className="flex items-center justify-between rounded-lg bg-teal-50 px-3 py-3 text-sm font-medium text-[#075f6a] transition hover:bg-teal-100"
+              >
+                Open schedule tracking
+                <CalendarDays className="h-4 w-4" />
+              </Link>
+            </div>
           </div>
-        </div>
+        </section>
+
+        <section className="grid grid-cols-1 gap-4 md:grid-cols-3" aria-label="Quick actions">
+          {[
+            {
+              title: 'Add learner profiles',
+              description: 'Import or create anonymised learner records.',
+              href: '/dashboard/tools/learner-profiles',
+              icon: Users,
+            },
+            {
+              title: 'Plan a lesson',
+              description: 'Build an assessment or teaching resource.',
+              href: '/dashboard/tools/assessment-planner',
+              icon: FileText,
+            },
+            {
+              title: 'Contact a parent',
+              description: 'Draft a progress update or concern message.',
+              href: '/dashboard/community/parent-communication',
+              icon: MessageSquareText,
+            },
+          ].map((action) => (
+            <Link
+              key={action.title}
+              href={action.href}
+              className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white p-4 transition hover:border-[#7bc6ce] hover:shadow-sm"
+            >
+              <div className="flex h-9 w-9 flex-none items-center justify-center rounded-lg bg-teal-50">
+                <action.icon className="h-4 w-4 text-[#087d8c]" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-slate-900">{action.title}</h3>
+                <p className="mt-1 text-sm text-slate-500">{action.description}</p>
+              </div>
+            </Link>
+          ))}
+        </section>
       </div>
     </DashboardLayout>
   );

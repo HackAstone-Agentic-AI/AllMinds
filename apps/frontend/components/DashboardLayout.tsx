@@ -99,7 +99,7 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
                     onClick={() => router.push(tab.href)}
                     className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
                       activeTab === tab.id
-                        ? 'bg-blue-50 text-blue-600'
+                        ? 'bg-teal-50 text-[#087d8c]'
                         : 'text-slate-600 hover:bg-slate-100'
                     }`}
                   >
@@ -140,7 +140,9 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
                           setShowLanguageMenu(false);
                         }}
                         className={`w-full px-4 py-2 text-left hover:bg-slate-50 transition text-sm ${
-                          language === lang.code ? 'font-semibold text-blue-600' : 'text-slate-700'
+                        language === lang.code
+                          ? 'font-semibold text-[#087d8c]'
+                          : 'text-slate-700'
                         }`}
                       >
                         {lang.label}
@@ -159,7 +161,7 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
                   className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition relative"
                 >
                   <Bell className="w-5 h-5" />
-                  <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+                  <span className="absolute top-1 right-1 w-2 h-2 bg-[#ff6b57] rounded-full"></span>
                 </button>
                 {showNotifications && (
                   <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-slate-200 py-2">
@@ -199,14 +201,14 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
             <button
               key={tab.id}
               onClick={() => router.push(tab.href)}
-              className={`px-2 py-3 text-xs font-medium transition flex flex-col items-center gap-1 ${
+              className={`min-h-16 px-1 py-2 text-[11px] font-medium leading-tight transition flex flex-col items-center justify-center gap-1 ${
                 activeTab === tab.id
-                  ? 'bg-blue-50 text-blue-600'
+                  ? 'bg-teal-50 text-[#087d8c]'
                   : 'text-slate-600 hover:bg-slate-100'
               }`}
             >
               <tab.icon className="w-5 h-5" />
-              <span className="truncate">{tab.label}</span>
+              <span className="max-w-full text-center">{tab.label}</span>
             </button>
           ))}
         </div>
