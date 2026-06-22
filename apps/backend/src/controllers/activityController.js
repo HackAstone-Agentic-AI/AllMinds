@@ -30,12 +30,10 @@ const getLessonPlans = async (req, res) => {
 
     try {
         const result = await pool.query(
-            `
-                SELECT id, title, content, created_at
-                FROM lesson_plans
-                WHERE teacher_id = $1
-                ORDER BY created_at DESC
-            `,
+            `SELECT id, title, content, created_at
+             FROM lesson_plans
+             WHERE teacher_id = $1
+             ORDER BY created_at DESC`,
             [teacherId]
         );
 
@@ -43,6 +41,91 @@ const getLessonPlans = async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Failed to fetch lesson plans' });
+    }
+};
+
+const getLessonPlanById = async (req, res) => {
+    const teacherId = req.user.id;
+    const planId = Number(req.params.planId);
+
+    if (!Number.isInteger(planId) || planId <= 0) {
+        return res.status(400).json({ error: 'Invalid plan ID' });
+    }
+
+    try {
+        const result = await pool.query(
+            `SELECT id, title, content, created_at
+             FROM lesson_plans
+             WHERE id = $1 AND teacher_id = $2`,
+            [planId, teacherId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Plan not found' });
+        }
+
+        res.json(result.rows[0]);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to fetch plan' });
+    }
+};
+
+const createLessonPlan = async (req, res) => {
+    const teacherId = req.user.id;
+    const title = typeof req.body.title === 'string' ? req.body.title.trim() : '';
+    const content = typeof req.body.content === 'string' ? req.body.content.trim() : '';
+
+    if (!title || title.length > 255) {
+        return res.status(400).json({ error: 'A plan title (max 255 characters) is required' });
+    }
+    if (!content) {
+        return res.status(400).json({ error: 'Plan content is required' });
+    }
+
+    try {
+        const result = await pool.query(
+            `INSERT INTO lesson_plans (teacher_id, title, content)
+             VALUES ($1, $2, $3)
+             RETURNING id, title, content, created_at`,
+            [teacherId, title, content]
+        );
+
+        await pool.query(
+            `INSERT INTO activities (teacher_id, activity_type, description)
+             VALUES ($1, $2, $3)`,
+            [teacherId, 'lesson_plan_created', `Saved assessment plan "${title}"`]
+        );
+
+        res.status(201).json(result.rows[0]);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to save plan' });
+    }
+};
+
+const deleteLessonPlan = async (req, res) => {
+    const teacherId = req.user.id;
+    const planId = Number(req.params.planId);
+
+    if (!Number.isInteger(planId) || planId <= 0) {
+        return res.status(400).json({ error: 'Invalid plan ID' });
+    }
+
+    try {
+        const result = await pool.query(
+            `DELETE FROM lesson_plans WHERE id = $1 AND teacher_id = $2 RETURNING id`,
+            [planId, teacherId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Plan not found' });
+        }
+
+        res.status(204).send();
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to delete plan' });
     }
 };
 
@@ -313,9 +396,12 @@ const deleteScheduleItem = async (req, res) => {
 };
 
 module.exports = {
+    createLessonPlan,
     createScheduleItem,
     createTask,
+    deleteLessonPlan,
     deleteScheduleItem,
+    getLessonPlanById,
     getLessonPlans,
     getRecentActivities,
     getScheduleItems,

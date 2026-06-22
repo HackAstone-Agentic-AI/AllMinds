@@ -5,6 +5,7 @@ const pool = require('./database');
 const jwt = require('jsonwebtoken');
 const https = require('https');
 const crypto = require('crypto');
+const { isPlaceholder } = require('./env');
 
 const backendUrl = process.env.BACKEND_URL || 'http://localhost:5000';
 
@@ -107,7 +108,7 @@ const buildAuthPayload = (user) => ({
     },
 });
 
-if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+if (!isPlaceholder(process.env.GOOGLE_CLIENT_ID) && !isPlaceholder(process.env.GOOGLE_CLIENT_SECRET)) {
     passport.use(
         new GoogleStrategy(
             {
@@ -134,7 +135,7 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
     );
 }
 
-if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET) {
+if (!isPlaceholder(process.env.MICROSOFT_CLIENT_ID) && !isPlaceholder(process.env.MICROSOFT_CLIENT_SECRET)) {
     const microsoftStrategy = new OAuth2Strategy(
         {
             authorizationURL: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
@@ -142,7 +143,7 @@ if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET) {
             clientID: process.env.MICROSOFT_CLIENT_ID,
             clientSecret: process.env.MICROSOFT_CLIENT_SECRET,
             callbackURL: `${backendUrl}/api/auth/microsoft/callback`,
-            state: true,
+            state: false,
         },
         async (accessToken, refreshToken, profile, done) => {
             try {
@@ -186,7 +187,7 @@ if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET) {
     passport.use('microsoft', microsoftStrategy);
 }
 
-if (process.env.APPLE_CLIENT_ID && process.env.APPLE_CLIENT_SECRET) {
+if (!isPlaceholder(process.env.APPLE_CLIENT_ID) && !isPlaceholder(process.env.APPLE_CLIENT_SECRET)) {
     const appleStrategy = new OAuth2Strategy(
         {
             authorizationURL: 'https://appleid.apple.com/auth/authorize',
@@ -194,7 +195,7 @@ if (process.env.APPLE_CLIENT_ID && process.env.APPLE_CLIENT_SECRET) {
             clientID: process.env.APPLE_CLIENT_ID,
             clientSecret: process.env.APPLE_CLIENT_SECRET,
             callbackURL: `${backendUrl}/api/auth/apple/callback`,
-            state: true,
+            state: false,
             passReqToCallback: true,
         },
         async (req, accessToken, refreshToken, params, profile, done) => {

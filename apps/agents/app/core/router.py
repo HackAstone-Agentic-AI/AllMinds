@@ -76,13 +76,17 @@ def run_multi_agent(
     records: list[dict[str, Any]] = None,
     language_pref: str = "en",
     tool_hint: Optional[str] = None,
-) -> str:
+    grade: Optional[str] = None,
+    subject: Optional[str] = None,
+    topic: Optional[str] = None,
+    support_need: Optional[str] = None,
+) -> dict:
     if records is None:
         records = []
 
     guard = check_input(user_input)
     if guard.blocked:
-        return guard.reason
+        return {"text": guard.reason, "youtube_links": [], "image_aids": []}
 
     state = {
         "input":         guard.cleaned,
@@ -90,6 +94,10 @@ def run_multi_agent(
         "learner_name":  learner_name,
         "records":       records,
         "language_pref": language_pref,
+        "grade":         grade or "",
+        "subject":       subject or "",
+        "topic":         topic or "",
+        "support_need":  support_need or "",
     }
 
     try:
@@ -110,9 +118,13 @@ def run_multi_agent(
 
         agent_fn = AGENT_MAP.get(decision, general_agent)
         result = agent_fn(state)
-        return check_output(result.get("output", ""))
+        return {
+            "text":          check_output(result.get("output", "")),
+            "youtube_links": result.get("youtube_links", []),
+            "image_aids":    result.get("image_aids", []),
+        }
     except Exception as exc:
         err = str(exc)
         if "api" in err.lower() or "connect" in err.lower() or "key" in err.lower():
-            return "The AI service is temporarily unavailable. Please check your API keys and try again."
-        return "An unexpected error occurred. Please try again."
+            return {"text": "The AI service is temporarily unavailable. Please check your API keys and try again.", "youtube_links": [], "image_aids": []}
+        return {"text": "An unexpected error occurred. Please try again.", "youtube_links": [], "image_aids": []}

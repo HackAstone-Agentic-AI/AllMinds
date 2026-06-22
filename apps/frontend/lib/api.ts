@@ -81,6 +81,10 @@ createProgress: (learnerId: number, data: any) =>
   // Activities & Lesson Plans
   getActivities: () => request('/activities/activities'),
   getLessonPlans: () => request('/activities/lesson-plans'),
+  getLessonPlan: (id: number) => request(`/activities/lesson-plans/${id}`),
+  createLessonPlan: (title: string, content: string) =>
+    request('/activities/lesson-plans', { method: 'POST', body: JSON.stringify({ title, content }) }),
+  deleteLessonPlan: (id: number) => request(`/activities/lesson-plans/${id}`, { method: 'DELETE' }),
   getTasks: () => request('/activities/tasks'),
   createTask: (data: any) => request('/activities/tasks', { method: 'POST', body: JSON.stringify(data) }),
   updateTask: (id: number, data: any) =>

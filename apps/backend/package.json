@@ -21,6 +21,7 @@
     "nodemailer": "^8.0.5",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
+    "passport-oauth2": "^1.8.0",
     "pg": "^8.11.3"
   },
   "devDependencies": {

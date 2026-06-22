@@ -22,7 +22,11 @@ export default function LoginPage() {
     const errorMap: Record<string, string> = {
       oauth_failed: 'We could not complete that sign-in request.',
       google_oauth_failed: 'Google sign-in failed. Please try again.',
-      google_oauth_not_configured: 'Google sign-in is not configured yet.',
+      google_oauth_not_configured: 'Google sign-in is not available yet.',
+      microsoft_oauth_failed: 'Microsoft sign-in failed. Please try again.',
+      microsoft_oauth_not_configured: 'Microsoft sign-in is not available yet.',
+      apple_oauth_failed: 'Apple sign-in failed. Please try again.',
+      apple_oauth_not_configured: 'Apple sign-in is not available yet.',
       session_expired: 'Your session expired. Sign in again to continue.',
     };
 

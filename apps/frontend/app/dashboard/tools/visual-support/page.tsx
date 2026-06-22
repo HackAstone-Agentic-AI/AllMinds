@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
-import { AlertCircle, ArrowLeft, Eye, MessageSquare, Send, Sparkles, User } from 'lucide-react';
+import { AlertCircle, ArrowLeft, ExternalLink, Eye, MessageSquare, Send, Sparkles, User } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 
@@ -12,10 +12,16 @@ interface TeacherProfileSummary {
   title: string;
 }
 
+interface YoutubeLink {
+  label: string;
+  url: string;
+}
+
 interface ChatMessage {
   id: number;
   role: 'assistant' | 'user';
   content: string;
+  youtubeLinks?: YoutubeLink[];
 }
 
 const starterPrompts = [
@@ -89,6 +95,7 @@ export default function VisualSupportPage() {
         id: Date.now() + 1,
         role: 'assistant',
         content: response.response || 'No response was returned.',
+        youtubeLinks: Array.isArray(response.youtube_links) ? response.youtube_links : [],
       };
 
       setMessages((current) => [...current, assistantMessage]);
@@ -180,6 +187,23 @@ export default function VisualSupportPage() {
                       )}
                     </div>
                     <p className="text-sm leading-6">{message.content}</p>
+                    {message.youtubeLinks && message.youtubeLinks.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-slate-200 space-y-2">
+                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Video Resources</p>
+                        {message.youtubeLinks.map((link) => (
+                          <a
+                            key={link.url}
+                            href={link.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-2 text-xs text-blue-700 hover:text-blue-900 hover:underline"
+                          >
+                            <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                            <span className="line-clamp-2">{link.label}</span>
+                          </a>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}

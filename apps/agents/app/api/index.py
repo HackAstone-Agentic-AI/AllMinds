@@ -36,6 +36,11 @@ class ChatRequest(BaseModel):
     records: list[dict[str, Any]] = Field(default_factory=list, max_length=100)
     language_pref: str = Field(default="en", min_length=2, max_length=10)
     tool_hint: Optional[Literal["general", "lesson", "multimodal", "schedule", "visual", "analytics", "rag"]] = None
+    # Structured fields for lesson planner — enables accurate YouTube / image generation
+    grade: Optional[str] = Field(default=None, max_length=20)
+    subject: Optional[str] = Field(default=None, max_length=100)
+    topic: Optional[str] = Field(default=None, max_length=200)
+    support_need: Optional[str] = Field(default=None, max_length=500)
 
     @field_validator("tool_hint")
     @classmethod
@@ -109,17 +114,23 @@ async def chat_endpoint(
     if guard.blocked:
         raise HTTPException(status_code=400, detail=guard.reason)
 
-    ai_response = run_multi_agent(
+    ai_result = run_multi_agent(
         user_input=guard.cleaned,
         thread_id=str(user_id),
         learner_name=payload.learner_name,
         records=payload.records,
         language_pref=payload.language_pref,
         tool_hint=payload.tool_hint,
+        grade=payload.grade,
+        subject=payload.subject,
+        topic=payload.topic,
+        support_need=payload.support_need,
     )
 
     return {
-        "status": "success",
+        "status":        "success",
         "input_received": guard.cleaned,
-        "response": ai_response,
+        "response":      ai_result["text"],
+        "youtube_links": ai_result.get("youtube_links", []),
+        "image_aids":    ai_result.get("image_aids", []),
     }
