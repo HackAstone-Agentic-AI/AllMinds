@@ -1,6 +1,6 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
 
-async function request(endpoint: string, options?: RequestInit) {
+async function request<T = any>(endpoint: string, options?: RequestInit): Promise<T> {
   const token = localStorage.getItem('allminds_token');
   const res = await fetch(`${API_BASE}${endpoint}`, {
     ...options,
@@ -12,9 +12,17 @@ async function request(endpoint: string, options?: RequestInit) {
   });
   if (!res.ok) {
     const error = await res.json().catch(() => ({}));
-    throw new Error(error.error || 'API request failed');
+    if (res.status === 401 && typeof window !== 'undefined') {
+      localStorage.removeItem('allminds_token');
+      localStorage.removeItem('allminds_user');
+      window.dispatchEvent(new Event('allminds:session-expired'));
+    }
+    throw new Error(error.error || `API request failed (${res.status})`);
   }
-  return res.json();
+  if (res.status === 204) {
+    return undefined as T;
+  }
+  return res.json() as Promise<T>;
 }
 
 export const api = {
@@ -23,6 +31,11 @@ export const api = {
     request('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
   getOAuthUrl: (provider: 'google' | 'microsoft' | 'apple') =>
     `${API_BASE.replace(/\/api$/, '')}/api/auth/${provider}`,
+  exchangeOAuthCode: (code: string) =>
+    request('/auth/oauth/exchange', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    }),
   register: (data: any) =>
     request('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
   forgotPassword: (email: string) =>
@@ -72,6 +85,20 @@ createProgress: (learnerId: number, data: any) =>
   createTask: (data: any) => request('/activities/tasks', { method: 'POST', body: JSON.stringify(data) }),
   updateTask: (id: number, data: any) =>
     request(`/activities/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  getScheduleItems: (learnerId: number) =>
+    request(`/activities/schedule-items?learnerId=${learnerId}`),
+  createScheduleItem: (data: {
+    learner_id: number;
+    title: string;
+    start_time: string;
+    notes?: string;
+  }) =>
+    request('/activities/schedule-items', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  deleteScheduleItem: (id: number) =>
+    request(`/activities/schedule-items/${id}`, { method: 'DELETE' }),
 
   // NGOs & Strategies (if used elsewhere)
   getNGOs: (params?: Record<string, string>) => {

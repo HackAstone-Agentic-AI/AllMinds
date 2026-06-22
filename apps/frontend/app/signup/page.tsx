@@ -32,8 +32,8 @@ export default function SignupPage() {
       setError('Passwords do not match');
       return;
     }
-    if (formData.password.length < 6) {
-      setError('Password must be at least 6 characters');
+    if (formData.password.length < 8) {
+      setError('Password must be at least 8 characters');
       return;
     }
 
@@ -47,7 +47,6 @@ export default function SignupPage() {
         title: formData.title,
         name: formData.name,
         surname: formData.surname,
-        role: 'teacher',
         school_name: '',
         province: '',
         city: '',
@@ -178,7 +177,7 @@ export default function SignupPage() {
               value={formData.password}
               onChange={handleChange}
               className="w-full rounded-lg border border-slate-300 bg-white py-3 pl-10 pr-3 text-sm text-slate-900 outline-none transition focus:border-[#087d8c] focus:ring-2 focus:ring-[#087d8c]/20"
-              placeholder="At least 6 characters"
+              placeholder="At least 8 characters"
               autoComplete="new-password"
               required
             />

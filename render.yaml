@@ -82,6 +82,8 @@ services:
           property: connectionString
       - key: ALLOWED_ORIGINS
         value: https://allminds-frontend.onrender.com
+      - key: BACKEND_API_URL
+        value: https://allminds-backend.onrender.com/api
       - key: APP_TIMEZONE
         value: Africa/Johannesburg
       - key: GOOGLE_CLIENT_ID

@@ -1,4 +1,5 @@
 const pool = require('../config/database');
+const crypto = require('crypto');
 
 // Get all learners for the logged-in teacher
 const getLearners = async (req, res) => {
@@ -21,16 +22,23 @@ const getLearners = async (req, res) => {
 const createLearner = async (req, res) => {
     const teacherId = req.user.id;
     const { anonymous_id, profile_data } = req.body;
-    if (!anonymous_id) return res.status(400).json({ error: 'anonymous_id required' });
+    const anonymousId = typeof anonymous_id === 'string' ? anonymous_id.trim() : '';
+    if (!anonymousId) return res.status(400).json({ error: 'anonymous_id required' });
+    if (anonymousId.length > 100) {
+        return res.status(400).json({ error: 'anonymous_id must be 100 characters or fewer' });
+    }
     try {
         const result = await pool.query(`
             INSERT INTO learner_profiles (teacher_id, anonymous_id, profile_data)
             VALUES ($1, $2, $3)
             RETURNING *
-        `, [teacherId, anonymous_id, profile_data || {}]);
+        `, [teacherId, anonymousId, profile_data || {}]);
         res.status(201).json(result.rows[0]);
     } catch (err) {
         console.error(err);
+        if (err.code === '23505') {
+            return res.status(409).json({ error: 'A learner with this anonymous ID already exists' });
+        }
         res.status(500).json({ error: 'Failed to create learner' });
     }
 };
@@ -40,7 +48,12 @@ const bulkCreateLearners = async (req, res) => {
     const teacherId = req.user.id;
     const learners = req.body.learners;
     if (!Array.isArray(learners)) return res.status(400).json({ error: 'learners array required' });
+    if (learners.length === 0 || learners.length > 1000) {
+        return res.status(400).json({ error: 'Upload between 1 and 1000 learner rows at a time' });
+    }
+    const client = await pool.connect();
     try {
+        await client.query('BEGIN');
         let insertedCount = 0;
         for (const [index, learner] of learners.entries()) {
             const anonymousId =
@@ -48,7 +61,11 @@ const bulkCreateLearners = async (req, res) => {
                 learner.anonymousId ||
                 learner['Anonymous ID'] ||
                 learner.learner_id ||
-                `LEARNER-${teacherId}-${Date.now()}-${index + 1}`;
+                `LEARNER-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+
+            if (String(anonymousId).trim().length > 100) {
+                throw new Error(`Learner row ${index + 1} has an anonymous ID longer than 100 characters`);
+            }
 
             const profileData = learner.profile_data || (() => {
                 const normalized = { ...learner };
@@ -59,17 +76,27 @@ const bulkCreateLearners = async (req, res) => {
                 return normalized;
             })();
 
-            const insertResult = await pool.query(`
+            const insertResult = await client.query(`
                 INSERT INTO learner_profiles (teacher_id, anonymous_id, profile_data)
                 VALUES ($1, $2, $3)
                 ON CONFLICT ON CONSTRAINT learner_profiles_teacher_anonymous_unique DO NOTHING
-            `, [teacherId, anonymousId, profileData || {}]);
+            `, [teacherId, String(anonymousId).trim(), profileData || {}]);
             insertedCount += insertResult.rowCount;
         }
+        await client.query('COMMIT');
         res.status(201).json({ message: `${insertedCount} learners uploaded` });
     } catch (err) {
+        await client.query('ROLLBACK').catch(() => null);
         console.error(err);
-        res.status(500).json({ error: 'Bulk upload failed' });
+        const validationMessage =
+            typeof err.message === 'string' && err.message.startsWith('Learner row ')
+                ? err.message
+                : null;
+        res.status(validationMessage ? 400 : 500).json({
+            error: validationMessage || 'Bulk upload failed',
+        });
+    } finally {
+        client.release();
     }
 };
 
@@ -96,10 +123,16 @@ const createSensoryLog = async (req, res) => {
     const { behavior, trigger, response, notes } = req.body;
     const logData = { behavior, trigger, response, notes };
     try {
-        await pool.query(`
+        const insertResult = await pool.query(`
             INSERT INTO sensory_toolkit_logs (learner_id, teacher_id, log_data)
-            VALUES ($1, $2, $3)
+            SELECT lp.id, $2, $3
+            FROM learner_profiles lp
+            WHERE lp.id = $1 AND lp.teacher_id = $2
+            RETURNING id
         `, [learnerId, teacherId, logData]);
+        if (insertResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Learner not found' });
+        }
         // Log activity
         await pool.query(`
             INSERT INTO activities (teacher_id, activity_type, description)
@@ -162,10 +195,16 @@ const createProgress = async (req, res) => {
         return res.status(400).json({ error: 'Area and level are required' });
     }
     try {
-        await pool.query(`
+        const insertResult = await pool.query(`
             INSERT INTO learner_progress (learner_id, teacher_id, progress_data)
-            VALUES ($1, $2, $3)
+            SELECT lp.id, $2, $3
+            FROM learner_profiles lp
+            WHERE lp.id = $1 AND lp.teacher_id = $2
+            RETURNING id
         `, [learnerId, teacherId, progressData]);
+        if (insertResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Learner not found' });
+        }
         // Log activity
         await pool.query(`
             INSERT INTO activities (teacher_id, activity_type, description)

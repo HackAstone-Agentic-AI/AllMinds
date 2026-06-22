@@ -71,7 +71,7 @@ def _enrich_with_rag(state: dict) -> dict:
 
 def run_multi_agent(
     user_input: str,
-    thread_id: str = "default_user",
+    thread_id: str,
     learner_name: str = "",
     records: list[dict[str, Any]] = None,
     language_pref: str = "en",

@@ -9,10 +9,14 @@ const hashToken = (token) =>
 // Request password reset
 const forgotPassword = async (req, res) => {
     const { email } = req.body;
-    if (!email) return res.status(400).json({ error: 'Email is required' });
+    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+    if (!normalizedEmail) return res.status(400).json({ error: 'Email is required' });
 
     try {
-        const userResult = await pool.query('SELECT id, email FROM users WHERE email = $1', [email]);
+        const userResult = await pool.query(
+            'SELECT id, email FROM users WHERE LOWER(email) = $1',
+            [normalizedEmail]
+        );
         if (userResult.rows.length === 0) {
             return res.json({ message: 'If that email is registered, you will receive a reset link.' });
         }
@@ -38,7 +42,10 @@ const forgotPassword = async (req, res) => {
             <a href="${resetLink}">${resetLink}</a>
             <p>If you did not request this, please ignore this email.</p>
         `;
-        await sendEmail(email, 'AllMinds Password Reset', html);
+        const sent = await sendEmail(user.email, 'AllMinds Password Reset', html);
+        if (!sent) {
+            await pool.query('DELETE FROM password_reset_tokens WHERE user_id = $1', [user.id]);
+        }
 
         res.json({ message: 'If that email is registered, you will receive a reset link.' });
     } catch (err) {
@@ -53,8 +60,8 @@ const resetPassword = async (req, res) => {
     if (!token || !new_password) {
         return res.status(400).json({ error: 'Token and new password are required' });
     }
-    if (new_password.length < 6) {
-        return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    if (new_password.length < 8 || new_password.length > 128) {
+        return res.status(400).json({ error: 'Password must be between 8 and 128 characters' });
     }
 
     const tokenHash = hashToken(token);
@@ -80,7 +87,10 @@ const resetPassword = async (req, res) => {
         // Delete the token; if the UPDATE below fails the transaction rolls back and the token is restored
         await client.query('DELETE FROM password_reset_tokens WHERE token = $1', [tokenHash]);
 
-        const hashedPassword = await bcrypt.hash(new_password, 10);
+        const hashedPassword = await bcrypt.hash(
+            new_password,
+            parseInt(process.env.BCRYPT_ROUNDS, 10) || 10
+        );
         await client.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hashedPassword, user_id]);
 
         await client.query('COMMIT');

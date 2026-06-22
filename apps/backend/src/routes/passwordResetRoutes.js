@@ -14,6 +14,6 @@ const forgotPasswordLimiter = rateLimit({
 });
 
 router.post('/forgot-password', forgotPasswordLimiter, forgotPassword);
-router.post('/reset-password', resetPassword);
+router.post('/reset-password', forgotPasswordLimiter, resetPassword);
 
 module.exports = router;

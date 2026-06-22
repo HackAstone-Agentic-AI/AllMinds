@@ -39,22 +39,11 @@ export default function AgentChat() {
     setLoading(true);
 
     try {
-      const threadId = (() => {
-        if (typeof window === 'undefined') return 'default_user';
-        try {
-          const raw = localStorage.getItem('allminds_user');
-          if (!raw) return 'default_user';
-          const parsed = JSON.parse(raw) as { id?: unknown };
-          return parsed?.id ? String(parsed.id) : 'default_user';
-        } catch {
-          return 'default_user';
-        }
-      })();
       const languagePref =
         (typeof window !== 'undefined' && localStorage.getItem('allminds_language')) ||
         'en';
 
-      const result = await api.chatWithAgent(text, { thread_id: threadId, language_pref: languagePref });
+      const result = await api.chatWithAgent(text, { language_pref: languagePref });
       const reply: string = result?.response ?? result?.output ?? 'No response received.';
       setMessages((prev) => [...prev, { role: 'assistant', content: reply }]);
     } catch (err) {

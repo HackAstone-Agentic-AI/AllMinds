@@ -23,6 +23,7 @@ export default function LoginPage() {
       oauth_failed: 'We could not complete that sign-in request.',
       google_oauth_failed: 'Google sign-in failed. Please try again.',
       google_oauth_not_configured: 'Google sign-in is not configured yet.',
+      session_expired: 'Your session expired. Sign in again to continue.',
     };
 
     setError(errorMap[oauthError] || 'We could not complete that sign-in request.');

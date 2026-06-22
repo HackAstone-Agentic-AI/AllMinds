@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import * as XLSX from 'xlsx';
 import DashboardLayout from '@/components/DashboardLayout';
 import { LearnerProfile } from '@/types/database';
 import { Upload, Download, User, ArrowLeft } from 'lucide-react';
@@ -40,7 +39,7 @@ export default function LearnerProfilesPage() {
   const normalizeHeader = (header: string) => header.replace(/\s+/g, ' ').trim();
 
   const buildImportedLearners = (rows: Array<Record<string, unknown>>) => {
-    return rows.reduce<ImportedLearnerRow[]>((acc, row, index) => {
+    return rows.reduce<ImportedLearnerRow[]>((acc, row) => {
       const normalizedRow = Object.entries(row).reduce<Record<string, unknown>>((result, entry) => {
         const [key, value] = entry;
         const normalizedKey = normalizeHeader(key);
@@ -61,9 +60,7 @@ export default function LearnerProfilesPage() {
         normalizedRow.AnonymousID ||
         normalizedRow.learner_id;
 
-      const anonymousId = String(
-        anonymousIdSource || `LEARNER-${Date.now()}-${index + 1}`,
-      ).trim();
+      const anonymousId = anonymousIdSource ? String(anonymousIdSource).trim() : '';
 
       delete normalizedRow.anonymous_id;
       delete normalizedRow['Anonymous ID'];
@@ -138,16 +135,34 @@ export default function LearnerProfilesPage() {
     }
 
     const data = await file.arrayBuffer();
-    const workbook = XLSX.read(data, { type: 'array' });
-    const firstSheetName = workbook.SheetNames[0];
+    const { default: ExcelJS } = await import('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(data);
+    const worksheet = workbook.worksheets[0];
 
-    if (!firstSheetName) {
+    if (!worksheet) {
       throw new Error('The spreadsheet does not contain any sheets.');
     }
+    if (worksheet.rowCount > 1001) {
+      throw new Error('Import a maximum of 1000 learner rows at a time.');
+    }
 
-    const worksheet = workbook.Sheets[firstSheetName];
-    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, {
-      defval: '',
+    const headerRow = worksheet.getRow(1);
+    const headers = Array.from({ length: worksheet.columnCount }, (_, index) =>
+      normalizeHeader(String(headerRow.getCell(index + 1).text || '')),
+    );
+    const rows: Array<Record<string, unknown>> = [];
+
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return;
+      const record: Record<string, unknown> = {};
+      headers.forEach((header, index) => {
+        if (!header) return;
+        record[header] = row.getCell(index + 1).text.trim();
+      });
+      if (Object.values(record).some((value) => String(value).trim())) {
+        rows.push(record);
+      }
     });
 
     if (rows.length === 0) {
@@ -160,11 +175,16 @@ export default function LearnerProfilesPage() {
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setUploadMessage('The learner file must be 5 MB or smaller.');
+      event.target.value = '';
+      return;
+    }
 
-    const allowedExtensions = ['.csv', '.xlsx', '.xls'];
+    const allowedExtensions = ['.csv', '.xlsx'];
     const lowerName = file.name.toLowerCase();
     if (!allowedExtensions.some((extension) => lowerName.endsWith(extension))) {
-      setUploadMessage('Upload a CSV, XLSX, or XLS learner file.');
+      setUploadMessage('Upload a CSV or XLSX learner file.');
       event.target.value = '';
       return;
     }
@@ -247,7 +267,7 @@ export default function LearnerProfilesPage() {
             <label className="cursor-pointer block">
               <input
                 type="file"
-                accept=".csv,.xlsx,.xls"
+                accept=".csv,.xlsx"
                 onChange={handleFileUpload}
                 className="hidden"
                 disabled={uploading}
@@ -255,7 +275,7 @@ export default function LearnerProfilesPage() {
               <div className="text-center">
                 <Upload className="w-8 h-8 text-slate-400 mx-auto mb-3" />
                 <p className="font-medium text-slate-800 mb-1">Upload Learner Data</p>
-                <p className="text-sm text-slate-500">CSV, XLSX, or XLS files</p>
+                <p className="text-sm text-slate-500">CSV or XLSX files</p>
                 {uploading && <p className="text-sm text-blue-600 mt-2">Uploading...</p>}
               </div>
             </label>
@@ -304,7 +324,7 @@ export default function LearnerProfilesPage() {
               <p className="text-slate-600 mb-4">
                 Upload learner data to create anonymized profiles
               </p>
-              <p className="text-sm text-slate-500">Supported formats: CSV, XLSX, XLS</p>
+              <p className="text-sm text-slate-500">Supported formats: CSV and XLSX</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

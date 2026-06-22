@@ -60,6 +60,12 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
   }, [loadProfile]);
 
   useEffect(() => {
+    const handleSessionExpired = () => router.replace('/login?error=session_expired');
+    window.addEventListener('allminds:session-expired', handleSessionExpired);
+    return () => window.removeEventListener('allminds:session-expired', handleSessionExpired);
+  }, [router]);
+
+  useEffect(() => {
     const section = new URLSearchParams(window.location.search).get('settings');
     if (
       section === 'profile' ||

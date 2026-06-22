@@ -204,10 +204,121 @@ const updateTask = async (req, res) => {
     }
 };
 
+const getScheduleItems = async (req, res) => {
+    const teacherId = req.user.id;
+    const learnerId = Number(req.query.learnerId);
+
+    if (!Number.isInteger(learnerId) || learnerId <= 0) {
+        return res.status(400).json({ error: 'A valid learnerId is required' });
+    }
+
+    try {
+        const result = await pool.query(
+            `
+                SELECT si.id, si.teacher_id, si.learner_id, si.title,
+                       to_char(si.start_time, 'HH24:MI') AS start_time,
+                       si.notes, si.created_at, si.updated_at
+                FROM learner_schedule_items si
+                JOIN learner_profiles lp ON lp.id = si.learner_id
+                WHERE si.teacher_id = $1 AND si.learner_id = $2 AND lp.teacher_id = $1
+                ORDER BY si.start_time, si.created_at
+            `,
+            [teacherId, learnerId]
+        );
+
+        res.json(result.rows);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to fetch schedule items' });
+    }
+};
+
+const createScheduleItem = async (req, res) => {
+    const teacherId = req.user.id;
+    const learnerId = Number(req.body.learner_id);
+    const title = typeof req.body.title === 'string' ? req.body.title.trim() : '';
+    const startTime = typeof req.body.start_time === 'string' ? req.body.start_time.trim() : '';
+    const notes = typeof req.body.notes === 'string' ? req.body.notes.trim() : '';
+
+    if (!Number.isInteger(learnerId) || learnerId <= 0) {
+        return res.status(400).json({ error: 'A valid learner is required' });
+    }
+    if (!title || title.length > 160) {
+        return res.status(400).json({ error: 'Title is required and must be 160 characters or fewer' });
+    }
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime)) {
+        return res.status(400).json({ error: 'start_time must use HH:MM format' });
+    }
+    if (notes.length > 1000) {
+        return res.status(400).json({ error: 'Notes must be 1000 characters or fewer' });
+    }
+
+    try {
+        const result = await pool.query(
+            `
+                INSERT INTO learner_schedule_items
+                    (teacher_id, learner_id, title, start_time, notes)
+                SELECT $1, lp.id, $3, $4::time, $5
+                FROM learner_profiles lp
+                WHERE lp.id = $2 AND lp.teacher_id = $1
+                RETURNING id, teacher_id, learner_id, title,
+                          to_char(start_time, 'HH24:MI') AS start_time,
+                          notes, created_at, updated_at
+            `,
+            [teacherId, learnerId, title, startTime, notes || null]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Learner not found' });
+        }
+
+        await pool.query(
+            `INSERT INTO activities (teacher_id, activity_type, description)
+             VALUES ($1, $2, $3)`,
+            [teacherId, 'schedule_item_created', `Added "${title}" to a learner schedule`]
+        );
+
+        res.status(201).json(result.rows[0]);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to create schedule item' });
+    }
+};
+
+const deleteScheduleItem = async (req, res) => {
+    const teacherId = req.user.id;
+    const scheduleItemId = Number(req.params.scheduleItemId);
+
+    if (!Number.isInteger(scheduleItemId) || scheduleItemId <= 0) {
+        return res.status(400).json({ error: 'Invalid schedule item ID' });
+    }
+
+    try {
+        const result = await pool.query(
+            `DELETE FROM learner_schedule_items
+             WHERE id = $1 AND teacher_id = $2
+             RETURNING id`,
+            [scheduleItemId, teacherId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Schedule item not found' });
+        }
+
+        res.status(204).send();
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to delete schedule item' });
+    }
+};
+
 module.exports = {
+    createScheduleItem,
     createTask,
+    deleteScheduleItem,
     getLessonPlans,
     getRecentActivities,
+    getScheduleItems,
     getTasks,
     updateTask,
 };

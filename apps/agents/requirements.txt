@@ -17,3 +17,4 @@ google-auth-oauthlib
 python-dotenv
 chromadb
 pypdf
+httpx

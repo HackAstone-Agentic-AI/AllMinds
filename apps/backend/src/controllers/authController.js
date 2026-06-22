@@ -11,7 +11,6 @@ const register = async (req, res) => {
         title,
         name,
         surname,
-        role,
         school_name,
         province,
         city,
@@ -20,15 +19,21 @@ const register = async (req, res) => {
     } = req.body;
 
     // Validation
-    if (!email || !password || !full_name) {
+    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+    const normalizedFullName = typeof full_name === 'string' ? full_name.trim() : '';
+
+    if (!normalizedEmail || !password || !normalizedFullName) {
         return res.status(400).json({ error: 'Email, password, and full name are required' });
+    }
+    if (password.length < 8 || password.length > 128) {
+        return res.status(400).json({ error: 'Password must be between 8 and 128 characters' });
     }
 
     let client;
 
     try {
         // Check if user already exists
-        const existingUser = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+        const existingUser = await pool.query('SELECT id FROM users WHERE LOWER(email) = $1', [normalizedEmail]);
         if (existingUser.rows.length > 0) {
             return res.status(409).json({ error: 'User with this email already exists' });
         }
@@ -44,7 +49,7 @@ const register = async (req, res) => {
             `INSERT INTO users (email, password_hash, full_name, role, school_name, province, city, phone, language_pref)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
              RETURNING id, email, full_name, role, school_name, province`,
-            [email, password_hash, full_name, role || 'teacher', school_name, province, city, phone, language_pref || 'English']
+            [normalizedEmail, password_hash, normalizedFullName, 'teacher', school_name, province, city, phone, language_pref || 'en']
         );
 
         const user = result.rows[0];
@@ -67,7 +72,7 @@ const register = async (req, res) => {
         const token = jwt.sign(
             { id: user.id, email: user.email, role: user.role },
             process.env.JWT_SECRET,
-            { expiresIn: process.env.JWT_EXPIRES_IN }
+            { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
         );
 
         res.status(201).json({
@@ -96,8 +101,9 @@ const register = async (req, res) => {
 // User Login
 const login = async (req, res) => {
     const { email, password } = req.body;
+    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
 
-    if (!email || !password) {
+    if (!normalizedEmail || !password) {
         return res.status(400).json({ error: 'Email and password are required' });
     }
 
@@ -105,7 +111,7 @@ const login = async (req, res) => {
         // Find user
         const result = await pool.query(
             'SELECT id, email, password_hash, full_name, role, school_name, province, is_active FROM users WHERE email = $1',
-            [email]
+            [normalizedEmail]
         );
 
         if (result.rows.length === 0) {
@@ -129,7 +135,7 @@ const login = async (req, res) => {
         const token = jwt.sign(
             { id: user.id, email: user.email, role: user.role },
             process.env.JWT_SECRET,
-            { expiresIn: process.env.JWT_EXPIRES_IN }
+            { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
         );
 
         res.json({

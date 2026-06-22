@@ -9,6 +9,11 @@ const getAgentServiceUrl = () => {
 
 const proxyAgentChat = async (req, res) => {
     try {
+        const payload = {
+            ...(req.body && typeof req.body === 'object' ? req.body : {}),
+            thread_id: String(req.user.id),
+        };
+
         const upstream = await fetch(`${getAgentServiceUrl()}/chat`, {
             method: 'POST',
             headers: {
@@ -17,7 +22,8 @@ const proxyAgentChat = async (req, res) => {
                     ? { Authorization: req.headers.authorization }
                     : {}),
             },
-            body: JSON.stringify(req.body ?? {}),
+            body: JSON.stringify(payload),
+            signal: AbortSignal.timeout(45_000),
         });
 
         const contentType = upstream.headers.get('content-type') || '';
@@ -38,11 +44,11 @@ const proxyAgentChat = async (req, res) => {
 
         return res.status(upstream.status).json(data);
     } catch (error) {
+        const timedOut = error?.name === 'TimeoutError';
         return res.status(502).json({
-            error:
-                error instanceof Error
-                    ? error.message
-                    : 'Unable to reach the agent service.',
+            error: timedOut
+                ? 'The AI request timed out. Please try again.'
+                : 'Unable to reach the agent service.',
         });
     }
 };

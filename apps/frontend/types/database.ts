@@ -90,3 +90,14 @@ export interface TeacherTask {
   created_at: string;
   updated_at: string;
 }
+
+export interface LearnerScheduleItem {
+  id: number;
+  teacher_id: number;
+  learner_id: number;
+  title: string;
+  start_time: string;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}

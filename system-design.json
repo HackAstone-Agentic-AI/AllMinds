@@ -441,7 +441,7 @@
         "description": "Main AI chat endpoint",
         "request_body": {
           "message": "string — teacher's question or request",
-          "thread_id": "string — per-user conversation ID (default: 'default_user')",
+          "thread_id": "string - derived from the verified JWT user ID; client values are ignored",
           "learner_name": "string — optional learner context",
           "records": "array — optional learner records for context",
           "language_pref": "string — response language (default: 'en')"

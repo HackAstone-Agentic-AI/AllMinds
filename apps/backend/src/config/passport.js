@@ -58,13 +58,6 @@ async function verifyAppleIdToken(idToken) {
     );
 }
 
-const createToken = (user) =>
-    jwt.sign(
-        { id: user.id, email: user.email, role: user.role },
-        process.env.JWT_SECRET,
-        { expiresIn: process.env.JWT_EXPIRES_IN }
-    );
-
 const parseName = (fullName = '') => {
     const parts = fullName.trim().split(/\s+/).filter(Boolean);
     return {
@@ -112,7 +105,6 @@ const buildAuthPayload = (user) => ({
         school_name: user.school_name || '',
         province: user.province || '',
     },
-    token: createToken(user),
 });
 
 if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {

@@ -2,6 +2,7 @@
 from pathlib import Path
 from typing import Any, Literal, Optional
 import os
+import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,16 +28,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-DEV_BEARER_TOKEN = "Bearer ujenius_dev_key_2026"
-
-
 class ChatRequest(BaseModel):
-    message: Optional[str] = None
-    user_input: Optional[str] = None
-    thread_id: str = "default_user"
-    learner_name: str = ""
-    records: list[dict[str, Any]] = Field(default_factory=list)
-    language_pref: str = "en"
+    message: Optional[str] = Field(default=None, max_length=4000)
+    user_input: Optional[str] = Field(default=None, max_length=4000)
+    thread_id: Optional[str] = None
+    learner_name: str = Field(default="", max_length=100)
+    records: list[dict[str, Any]] = Field(default_factory=list, max_length=100)
+    language_pref: str = Field(default="en", min_length=2, max_length=10)
     tool_hint: Optional[Literal["general", "lesson", "multimodal", "schedule", "visual", "analytics", "rag"]] = None
 
     @field_validator("tool_hint")
@@ -59,13 +57,32 @@ def extract_message(payload: ChatRequest) -> str:
     return message.strip()
 
 
-def validate_token_if_present(authorization: Optional[str]) -> None:
-    if authorization is None:
-        return
-    if authorization == DEV_BEARER_TOKEN:
-        return
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Invalid Authorization header")
+async def get_authenticated_user_id(authorization: Optional[str]) -> int:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Authentication is required.")
+
+    backend_api_url = os.getenv("BACKEND_API_URL", "").rstrip("/")
+    if not backend_api_url:
+        raise HTTPException(status_code=503, detail="Authentication service is not configured.")
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(
+                f"{backend_api_url}/auth/profile",
+                headers={"Authorization": authorization},
+            )
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="Authentication service is unavailable.") from exc
+
+    if response.status_code != 200:
+        raise HTTPException(status_code=401, detail="Invalid or expired session.")
+
+    try:
+        user_id = int(response.json()["id"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=502, detail="Authentication service returned an invalid profile.") from exc
+
+    return user_id
 
 
 @app.get("/health")
@@ -83,7 +100,7 @@ async def chat_endpoint(
     payload: ChatRequest,
     authorization: Optional[str] = Header(default=None),
 ):
-    validate_token_if_present(authorization)
+    user_id = await get_authenticated_user_id(authorization)
     user_message = extract_message(payload)
     if not user_message:
         raise HTTPException(status_code=422, detail="A message is required.")
@@ -94,7 +111,7 @@ async def chat_endpoint(
 
     ai_response = run_multi_agent(
         user_input=guard.cleaned,
-        thread_id=payload.thread_id,
+        thread_id=str(user_id),
         learner_name=payload.learner_name,
         records=payload.records,
         language_pref=payload.language_pref,

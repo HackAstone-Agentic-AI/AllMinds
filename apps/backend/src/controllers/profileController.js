@@ -24,6 +24,15 @@ const getProfile = async (req, res) => {
 const updateProfile = async (req, res) => {
     const userId = req.user.id;
     const { title, name, surname, theme_preference, language_pref } = req.body;
+    const clean = (value, maxLength) =>
+        typeof value === 'string' ? value.trim().slice(0, maxLength) : '';
+    const normalizedTheme = ['light', 'dark', 'auto'].includes(theme_preference)
+        ? theme_preference
+        : 'light';
+    const normalizedLanguage =
+        typeof language_pref === 'string' && /^[a-z]{2,3}(-[A-Z]{2})?$/.test(language_pref)
+            ? language_pref
+            : null;
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
@@ -37,12 +46,18 @@ const updateProfile = async (req, res) => {
                 surname = EXCLUDED.surname,
                 theme_preference = EXCLUDED.theme_preference,
                 updated_at = CURRENT_TIMESTAMP
-        `, [userId, title, name, surname, theme_preference]);
+        `, [
+            userId,
+            clean(title, 30) || null,
+            clean(name, 100) || null,
+            clean(surname, 100) || null,
+            normalizedTheme,
+        ]);
 
-        if (language_pref !== undefined) {
+        if (normalizedLanguage) {
             await client.query(
                 'UPDATE users SET language_pref = $1 WHERE id = $2',
-                [language_pref, userId]
+                [normalizedLanguage, userId]
             );
         }
 

@@ -2,18 +2,10 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
-import { LearnerProfile } from '@/types/database';
-import { ArrowLeft, Calendar, Clock3, Plus, Users } from 'lucide-react';
+import { LearnerProfile, LearnerScheduleItem } from '@/types/database';
+import { AlertCircle, ArrowLeft, Calendar, Clock3, Plus, Trash2, Users } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
-
-interface ScheduleItem {
-  id: number;
-  learnerId: number;
-  title: string;
-  time: string;
-  notes: string;
-}
 
 const mapLearnerRow = (learner: LearnerProfile) => ({
   ...learner,
@@ -24,8 +16,11 @@ export default function ScheduleTrackingPage() {
   const [learnerProfiles, setLearnerProfiles] = useState<LearnerProfile[]>([]);
   const [selectedLearnerId, setSelectedLearnerId] = useState<number | null>(null);
   const [loadingLearners, setLoadingLearners] = useState(true);
-  const [scheduleItems, setScheduleItems] = useState<ScheduleItem[]>([]);
+  const [scheduleItems, setScheduleItems] = useState<LearnerScheduleItem[]>([]);
   const [newItem, setNewItem] = useState({ title: '', time: '', notes: '' });
+  const [loadingSchedule, setLoadingSchedule] = useState(false);
+  const [savingItem, setSavingItem] = useState(false);
+  const [error, setError] = useState('');
   const router = useRouter();
 
   const loadLearnersFromDatabase = useCallback(async () => {
@@ -48,29 +43,83 @@ export default function ScheduleTrackingPage() {
     void loadLearnersFromDatabase();
   }, [loadLearnersFromDatabase]);
 
+  useEffect(() => {
+    if (!selectedLearnerId) {
+      setScheduleItems([]);
+      return;
+    }
+
+    let active = true;
+    setLoadingSchedule(true);
+    setError('');
+    api
+      .getScheduleItems(selectedLearnerId)
+      .then((items) => {
+        if (active) setScheduleItems(items);
+      })
+      .catch((requestError) => {
+        if (active) {
+          setError(
+            requestError instanceof Error
+              ? requestError.message
+              : 'Failed to load the learner schedule.',
+          );
+        }
+      })
+      .finally(() => {
+        if (active) setLoadingSchedule(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [selectedLearnerId]);
+
   const selectedLearner =
     learnerProfiles.find((learner) => learner.id === selectedLearnerId) ?? null;
 
-  const addScheduleItem = () => {
+  const addScheduleItem = async () => {
     if (!selectedLearnerId || !newItem.title.trim() || !newItem.time.trim()) {
       return;
     }
 
-    const item: ScheduleItem = {
-      id: Date.now(),
-      learnerId: selectedLearnerId,
-      title: newItem.title.trim(),
-      time: newItem.time.trim(),
-      notes: newItem.notes.trim(),
-    };
-
-    setScheduleItems((current) =>
-      [...current, item].sort((a, b) => a.time.localeCompare(b.time)),
-    );
-    setNewItem({ title: '', time: '', notes: '' });
+    setSavingItem(true);
+    setError('');
+    try {
+      const item = await api.createScheduleItem({
+        learner_id: selectedLearnerId,
+        title: newItem.title.trim(),
+        start_time: newItem.time.trim(),
+        notes: newItem.notes.trim(),
+      });
+      setScheduleItems((current) =>
+        [...current, item].sort((a, b) => a.start_time.localeCompare(b.start_time)),
+      );
+      setNewItem({ title: '', time: '', notes: '' });
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : 'Failed to save the schedule item.',
+      );
+    } finally {
+      setSavingItem(false);
+    }
   };
 
-  const filteredItems = scheduleItems.filter((item) => item.learnerId === selectedLearnerId);
+  const deleteScheduleItem = async (itemId: number) => {
+    setError('');
+    try {
+      await api.deleteScheduleItem(itemId);
+      setScheduleItems((current) => current.filter((item) => item.id !== itemId));
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : 'Failed to delete the schedule item.',
+      );
+    }
+  };
 
   return (
     <DashboardLayout activeTab="tools">
@@ -89,6 +138,16 @@ export default function ScheduleTrackingPage() {
             </p>
           </div>
         </div>
+
+        {error && (
+          <div
+            role="alert"
+            className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+          >
+            <AlertCircle className="mt-0.5 h-5 w-5 flex-none" />
+            {error}
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="bg-white rounded-xl border border-slate-200 p-6">
@@ -170,12 +229,17 @@ export default function ScheduleTrackingPage() {
 
               <div className="flex items-end">
                 <button
-                  onClick={addScheduleItem}
-                  disabled={!selectedLearnerId || !newItem.title.trim() || !newItem.time.trim()}
+                  onClick={() => void addScheduleItem()}
+                  disabled={
+                    savingItem ||
+                    !selectedLearnerId ||
+                    !newItem.title.trim() ||
+                    !newItem.time.trim()
+                  }
                   className="w-full bg-purple-600 hover:bg-purple-700 text-white font-medium py-3 px-4 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   <Plus className="w-5 h-5" />
-                  Add Item
+                  {savingItem ? 'Saving...' : 'Add item'}
                 </button>
               </div>
             </div>
@@ -193,7 +257,16 @@ export default function ScheduleTrackingPage() {
               />
             </div>
 
-            {filteredItems.length === 0 ? (
+            {loadingSchedule ? (
+              <div className="space-y-3" aria-label="Loading schedule">
+                {[0, 1, 2].map((item) => (
+                  <div
+                    key={item}
+                    className="h-20 animate-pulse rounded-lg bg-slate-100"
+                  />
+                ))}
+              </div>
+            ) : scheduleItems.length === 0 ? (
               <div className="text-center py-12 text-slate-500 border border-dashed border-slate-300 rounded-xl">
                 <Clock3 className="w-14 h-14 mx-auto mb-4 text-slate-300" />
                 <p className="font-medium">No schedule items yet</p>
@@ -203,7 +276,7 @@ export default function ScheduleTrackingPage() {
               </div>
             ) : (
               <div className="space-y-3">
-                {filteredItems.map((item) => (
+                {scheduleItems.map((item) => (
                   <div
                     key={item.id}
                     className="border border-slate-200 rounded-lg p-4 hover:shadow-sm transition"
@@ -215,9 +288,20 @@ export default function ScheduleTrackingPage() {
                           <p className="text-sm text-slate-600 mt-1">{item.notes}</p>
                         )}
                       </div>
-                      <span className="text-sm font-medium text-purple-700 bg-purple-50 px-3 py-1 rounded-full">
-                        {item.time}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-purple-700 bg-purple-50 px-3 py-1 rounded-full">
+                          {item.start_time}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => void deleteScheduleItem(item.id)}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-red-50 hover:text-red-600"
+                          aria-label={`Delete ${item.title}`}
+                          title="Delete schedule item"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}

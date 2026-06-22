@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const AGENTIC_AI_URL =
-  process.env.AGENTIC_AI_URL ||
-  'http://127.0.0.1:8000';
+const BACKEND_API_URL =
+  process.env.BACKEND_API_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  'http://localhost:5000/api';
 
 export async function POST(request: NextRequest) {
   let payload: unknown;
@@ -14,7 +15,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const upstream = await fetch(`${AGENTIC_AI_URL}/chat`, {
+    const upstream = await fetch(`${BACKEND_API_URL.replace(/\/$/, '')}/agent/chat`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -24,6 +25,7 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify(payload),
       cache: 'no-store',
+      signal: AbortSignal.timeout(50_000),
     });
 
     const data = await upstream.json().catch(() => null);
@@ -41,12 +43,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(data);
   } catch (error) {
+    const timedOut = error instanceof Error && error.name === 'TimeoutError';
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : 'Unable to reach the agent service.',
+        error: timedOut
+          ? 'The AI request timed out. Please try again.'
+          : 'Unable to reach the All Minds API.',
       },
       { status: 502 },
     );
