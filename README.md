@@ -84,7 +84,30 @@ A guardrail layer was added to protect every request before it reaches any LLM. 
 - Guardrail `check_input` runs before supervisor routing — blocked messages never reach any LLM
 - All agent calls wrapped in `try/except` — API key errors and connection failures return a clean message instead of an HTTP 500
 
-### Frontend (`apps/frontend`)
+### Frontend (`apps/frontend`) — Integration update
+
+#### Auth model
+The frontend uses the **Express backend** for all authentication — register, login, and OAuth.
+Credentials are validated against **PostgreSQL** and a JWT is returned, which the frontend stores
+in `localStorage` as `allminds_token` and sends as `Authorization: Bearer <token>` on every
+subsequent request via `lib/api.ts`.
+
+There is no Supabase dependency in the frontend. All user data lives in the PostgreSQL database
+managed by `apps/backend`.
+
+#### Tool pages — agent-powered
+Three tool pages that were missing have been created with a full chat interface wired directly
+to the specialist agents:
+
+| Page | Route | Agent hint |
+|---|---|---|
+| Visual Support | `/dashboard/tools/visual-support` | `visual` |
+| Assessment Planner | `/dashboard/tools/assessment-planner` | `lesson` |
+| Schedule & Tracking | `/dashboard/tools/schedule-tracking` | `schedule` |
+
+Each page shows starter prompts and a chat window; messages go through the Next.js proxy
+(`/api/agent/chat`) and are routed to the matching specialist agent without needing an
+authenticated backend session.
 
 #### Agent Chat Proxy Route (`app/api/agent/chat/route.ts`)
 Previously pointed to `http://localhost:5000/api/agent/chat` (the Express backend). Updated to proxy directly to the FastAPI agents service at `AGENTIC_AI_URL/chat`.
@@ -226,11 +249,9 @@ npm run dev
 
 Runs on `http://localhost:3000`.
 
-Also create `apps/frontend/.env.local` with:
-
-```env
-AGENTIC_AI_URL=http://127.0.0.1:8000
-```
+The root `.env` is loaded automatically by `next.config.js`, so `AGENTIC_AI_URL`,
+`NEXT_PUBLIC_API_URL`, and other shared vars are available at build and runtime.
+No additional `.env.local` is needed — the root `.env` covers everything.
 
 ---
 
