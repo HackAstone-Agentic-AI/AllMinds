@@ -138,7 +138,11 @@ const initiateCalendarOAuth = (req, res) => {
         state,
     });
 
-    res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
+    const authorizationUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+    if (req.query.format === 'json') {
+        return res.json({ url: authorizationUrl });
+    }
+    res.redirect(authorizationUrl);
 };
 
 const handleCalendarCallback = async (req, res) => {
@@ -148,16 +152,16 @@ const handleCalendarCallback = async (req, res) => {
     if (error) {
         // Only forward known error codes to the frontend — never reflect arbitrary input
         const safeError = ALLOWED_CALENDAR_ERRORS.has(error) ? error : 'unknown_error';
-        return res.redirect(`${frontendUrl}/settings?calendar_error=${safeError}`);
+        return res.redirect(`${frontendUrl}/dashboard?settings=integrations&calendar_error=${safeError}`);
     }
 
     const userId = parseState(state);
     if (!userId) {
-        return res.redirect(`${frontendUrl}/settings?calendar_error=invalid_state`);
+        return res.redirect(`${frontendUrl}/dashboard?settings=integrations&calendar_error=invalid_state`);
     }
 
     if (!code) {
-        return res.redirect(`${frontendUrl}/settings?calendar_error=missing_code`);
+        return res.redirect(`${frontendUrl}/dashboard?settings=integrations&calendar_error=missing_code`);
     }
 
     try {
@@ -172,7 +176,7 @@ const handleCalendarCallback = async (req, res) => {
 
         if (tokenResponse.error) {
             console.error('Google token exchange error:', tokenResponse);
-            return res.redirect(`${frontendUrl}/settings?calendar_error=token_exchange_failed`);
+            return res.redirect(`${frontendUrl}/dashboard?settings=integrations&calendar_error=token_exchange_failed`);
         }
 
         const { access_token, refresh_token, expires_in } = tokenResponse;
@@ -184,7 +188,7 @@ const handleCalendarCallback = async (req, res) => {
         );
         if (userInfoResult.statusCode !== 200 || userInfoResult.body.error) {
             console.error('Google userinfo error:', userInfoResult.body);
-            return res.redirect(`${frontendUrl}/settings?calendar_error=userinfo_failed`);
+            return res.redirect(`${frontendUrl}/dashboard?settings=integrations&calendar_error=userinfo_failed`);
         }
         const gmailEmail = userInfoResult.body.email || null;
 
@@ -217,11 +221,11 @@ const handleCalendarCallback = async (req, res) => {
         );
 
         res.redirect(
-            `${frontendUrl}/settings?calendar_connected=true&gmail=${encodeURIComponent(gmailEmail || '')}`
+            `${frontendUrl}/dashboard?settings=integrations&calendar_connected=true&gmail=${encodeURIComponent(gmailEmail || '')}`
         );
     } catch (err) {
         console.error('Calendar OAuth callback error:', err);
-        res.redirect(`${frontendUrl}/settings?calendar_error=server_error`);
+        res.redirect(`${frontendUrl}/dashboard?settings=integrations&calendar_error=server_error`);
     }
 };
 

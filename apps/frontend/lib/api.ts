@@ -33,6 +33,9 @@ export const api = {
   // Profile
   getProfile: () => request('/profile'),
   updateProfile: (data: any) => request('/profile', { method: 'PUT', body: JSON.stringify(data) }),
+  getCalendarStatus: () => request('/calendar/status'),
+  getCalendarConnectUrl: () => request('/calendar/connect?format=json'),
+  disconnectCalendar: () => request('/calendar/disconnect', { method: 'DELETE' }),
 
   // Learners
   getLearners: () => request('/learners'),

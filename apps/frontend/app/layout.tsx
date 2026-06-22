@@ -1,13 +1,32 @@
 import './globals.css';
 import type { Metadata } from 'next';
 import { LanguageProvider } from '@/lib/i18n/LanguageContext';
+import { PreferencesProvider } from '@/lib/preferences/PreferencesContext';
 
 export const metadata: Metadata = {
   metadataBase: new URL(
     process.env.NEXT_PUBLIC_APP_URL || 'https://allminds-frontend.onrender.com'
   ),
-  title: 'All Minds',
-  description: 'All Minds teacher support platform',
+  title: {
+    default: 'All Minds | Inclusive classroom intelligence',
+    template: '%s | All Minds',
+  },
+  description:
+    'AI-assisted planning, learner support, visual resources, scheduling, and family communication for inclusive classrooms.',
+  openGraph: {
+    title: 'All Minds | Inclusive classroom intelligence',
+    description:
+      'Plan, adapt, schedule, and communicate with inclusive classroom intelligence.',
+    type: 'website',
+    images: [
+      {
+        url: '/allminds-classroom-hero.png',
+        width: 1536,
+        height: 1024,
+        alt: 'Teacher supporting learners in an inclusive classroom',
+      },
+    ],
+  },
   icons: {
     icon: '/allminds-logo.png',
     apple: '/allminds-logo.png',
@@ -16,9 +35,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body>
-        <LanguageProvider>{children}</LanguageProvider>
+        <PreferencesProvider>
+          <LanguageProvider>{children}</LanguageProvider>
+        </PreferencesProvider>
       </body>
     </html>
   );

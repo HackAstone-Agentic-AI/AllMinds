@@ -15,10 +15,11 @@ import {
   Globe,
   LogOut,
 } from 'lucide-react';
-import SettingsPanel from './SettingsPanel';
+import SettingsPanel, { SettingsSection } from './SettingsPanel';
 import AgentChat from './AgentChat';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { LANGUAGES } from '@/lib/i18n/translations';
+import { ThemePreference, usePreferences } from '@/lib/preferences/PreferencesContext';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -28,10 +29,12 @@ interface DashboardLayoutProps {
 export default function DashboardLayout({ children, activeTab }: DashboardLayoutProps) {
   const [profile, setProfile] = useState<TeacherProfile | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>('profile');
   const [showNotifications, setShowNotifications] = useState(false);
   const [showLanguageMenu, setShowLanguageMenu] = useState(false);
   const router = useRouter();
   const { language, setLanguage, t } = useLanguage();
+  const { setTheme } = usePreferences();
 
   const loadProfile = useCallback(async () => {
     const token = localStorage.getItem('allminds_token');
@@ -43,15 +46,31 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
     try {
       const data = await api.getProfile();
       setProfile(data);
+      if (['light', 'dark', 'auto'].includes(data.theme_preference)) {
+        setTheme(data.theme_preference as ThemePreference);
+      }
     } catch (err) {
       console.error(err);
       router.push('/login');
     }
-  }, [router]);
+  }, [router, setTheme]);
 
   useEffect(() => {
     void loadProfile();
   }, [loadProfile]);
+
+  useEffect(() => {
+    const section = new URLSearchParams(window.location.search).get('settings');
+    if (
+      section === 'profile' ||
+      section === 'appearance' ||
+      section === 'accessibility' ||
+      section === 'integrations'
+    ) {
+      setSettingsSection(section);
+      setShowSettings(true);
+    }
+  }, []);
 
   const handleLogout = () => {
     localStorage.removeItem('allminds_token');
@@ -72,7 +91,7 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50 md:pl-64">
+    <div className="app-theme-surface min-h-screen bg-slate-50 md:pl-64">
       <aside className="fixed inset-y-0 left-0 z-50 hidden w-64 flex-col border-r border-slate-200 bg-white md:flex">
         <button
           onClick={() => router.push('/dashboard')}
@@ -121,7 +140,10 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
             </div>
           )}
           <button
-            onClick={() => setShowSettings(true)}
+            onClick={() => {
+              setSettingsSection('profile');
+              setShowSettings(true);
+            }}
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-100"
           >
             <Settings className="h-5 w-5" />
@@ -225,7 +247,10 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
             </div>
 
             <button
-              onClick={() => setShowSettings(true)}
+              onClick={() => {
+                setSettingsSection('profile');
+                setShowSettings(true);
+              }}
               className="rounded-lg p-2 text-slate-600 transition hover:bg-slate-100 md:hidden"
               aria-label="Settings"
               title="Settings"
@@ -268,6 +293,7 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
           profile={profile}
           onClose={() => setShowSettings(false)}
           onUpdate={loadProfile}
+          initialSection={settingsSection}
         />
       )}
 
