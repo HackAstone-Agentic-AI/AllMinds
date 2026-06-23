@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, Future
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from app.core.language import get_language_instruction
+from app.core.models import STANDARD_MODEL
 from app.core.visual_media import build_visual_youtube_links, generate_image_aids
 
 logger = logging.getLogger(__name__)
@@ -17,7 +18,7 @@ def get_llm() -> ChatGoogleGenerativeAI | None:
         return None
 
     return ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
+        model=STANDARD_MODEL,
         api_key=gemini_api_key,
         temperature=0.4,
         max_tokens=2000,

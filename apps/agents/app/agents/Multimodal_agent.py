@@ -2,6 +2,7 @@ import os
 from langchain_groq import ChatGroq
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage
+from app.core.models import STANDARD_MODEL
 
 # ─── LLM Setup ────────────────────────────────────────────────────────────────
 
@@ -11,7 +12,7 @@ def get_llm() -> ChatGoogleGenerativeAI | None:
         return None
 
     return ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
+        model=STANDARD_MODEL,
         api_key=gemini_api_key,
         temperature=0.5,
         max_tokens=800,

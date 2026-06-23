@@ -17,6 +17,8 @@ from urllib.parse import quote_plus
 from urllib.request import urlopen
 from urllib.error import HTTPError, URLError
 
+from app.core.models import IMAGE_MODEL
+
 logger = logging.getLogger(__name__)
 
 # ── YouTube ───────────────────────────────────────────────────────────────────
@@ -183,9 +185,7 @@ def generate_image_aids(
     if not api_key:
         return [], "no_key"
 
-    model = os.getenv(
-        "GEMINI_IMAGE_MODEL", "gemini-2.0-flash-preview-image-generation"
-    )
+    model = IMAGE_MODEL
     prompts, labels = _image_prompts(topic, subject, grade, context)
     images: list[dict] = []
 

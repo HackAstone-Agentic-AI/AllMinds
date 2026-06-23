@@ -7,6 +7,7 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_core.prompts import PromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
+from app.core.models import STANDARD_MODEL
 
 load_dotenv()
 
@@ -59,7 +60,7 @@ def answer_question(question: str) -> str:
     )
 
     model = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
+        model=STANDARD_MODEL,
         google_api_key=os.getenv("GEMINI_API_KEY"),
         temperature=0.5,
     )

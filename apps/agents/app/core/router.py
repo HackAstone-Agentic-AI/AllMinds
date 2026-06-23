@@ -9,6 +9,7 @@ from app.agents.scheduling_agent import scheduling_agent
 from app.agents.visual_support_agent import visual_support_agent
 from app.agents.analytics_agent import analytics_agent
 from app.agents.rag_agent import rag_agent
+from app.agents.parent_comm_agent import parent_comm_agent
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,7 @@ AGENT_MAP = {
     "visual":     visual_support_agent,
     "analytics":  analytics_agent,
     "rag":        rag_agent,
+    "parent":     parent_comm_agent,
 }
 
 # Single source of truth for valid tool hints — derived from AGENT_MAP so they
@@ -82,6 +84,7 @@ def run_multi_agent(
     support_need: Optional[str] = None,
     difficulty: Optional[str] = None,
     material_type: Optional[str] = None,
+    communication_type: Optional[str] = None,
 ) -> dict:
     if records is None:
         records = []
@@ -102,6 +105,7 @@ def run_multi_agent(
         "support_need":  support_need or "",
         "difficulty":    difficulty or "",
         "material_type": material_type or "",
+        "communication_type": communication_type or "",
     }
 
     try:

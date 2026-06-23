@@ -311,11 +311,12 @@ def _translate_analytics_text(text: str, language_pref: str) -> str:
     try:
         from langchain_google_genai import ChatGoogleGenerativeAI
         from langchain_core.messages import SystemMessage, HumanMessage
+        from app.core.models import STANDARD_MODEL
         gemini_api_key = os.getenv("GEMINI_API_KEY")
         if not gemini_api_key:
             return text
         llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
+            model=STANDARD_MODEL,
             api_key=gemini_api_key,
             temperature=0,
             max_tokens=600,

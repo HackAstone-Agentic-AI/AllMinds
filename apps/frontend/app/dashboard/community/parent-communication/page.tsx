@@ -48,11 +48,19 @@ export default function ParentCommunicationPage() {
     setMessage('');
 
     try {
+      const existingNotes = content.trim();
+      const notesContext = existingNotes
+        ? ` Incorporate these notes from the teacher: ${existingNotes}`
+        : '';
       const result = await api.chatWithAgent(
-        `Draft a professional, empathetic parent ${typeLabel} for a neurodivergent learner (${learnerLabel}). Use plain language, avoid jargon, and suggest one or two concrete ways the parent can support the learner at home.`,
+        `Draft a professional, empathetic parent ${typeLabel} for a neurodivergent learner (${learnerLabel}).${notesContext}`,
         {
           thread_id: `parent-comm-${selectedLearner}-${letterType}`,
-          tool_hint: 'general',
+          tool_hint: 'parent',
+          communication_type: letterType,
+          learner_name: learnerLabel,
+          language_pref:
+            (typeof window !== 'undefined' && localStorage.getItem('allminds_language')) || 'en',
         },
       );
       const draft: string = result?.response ?? '';

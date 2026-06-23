@@ -22,11 +22,14 @@ app = FastAPI(title="AllMinds API", version="1.0")
 @app.on_event("startup")
 async def _startup_health_check() -> None:
     """Log which optional services are configured so failures are visible at boot."""
+    from app.core.models import STANDARD_MODEL, PRO_MODEL, IMAGE_MODEL
     checks = {
         "GEMINI_API_KEY":       bool(os.getenv("GEMINI_API_KEY")),
         "GROQ_API_KEY":         bool(os.getenv("GROQ_API_KEY")),
         "YOUTUBE_API_KEY":      bool(os.getenv("YOUTUBE_API_KEY")),
-        "GEMINI_IMAGE_MODEL":   os.getenv("GEMINI_IMAGE_MODEL", "gemini-2.0-flash-preview-image-generation"),
+        "STANDARD_MODEL":       STANDARD_MODEL,
+        "PRO_MODEL":            PRO_MODEL,
+        "IMAGE_MODEL":          IMAGE_MODEL,
         "BACKEND_API_URL":      bool(os.getenv("BACKEND_API_URL")),
     }
     for key, value in checks.items():
@@ -57,7 +60,7 @@ class ChatRequest(BaseModel):
     learner_name: str = Field(default="", max_length=100)
     records: list[dict[str, Any]] = Field(default_factory=list, max_length=100)
     language_pref: str = Field(default="en", min_length=2, max_length=10)
-    tool_hint: Optional[Literal["general", "lesson", "multimodal", "schedule", "visual", "analytics", "rag"]] = None
+    tool_hint: Optional[Literal["general", "lesson", "multimodal", "schedule", "visual", "analytics", "rag", "parent"]] = None
     # Structured fields for lesson planner — enables accurate YouTube / image generation
     grade: Optional[str] = Field(default=None, max_length=20)
     subject: Optional[str] = Field(default=None, max_length=100)
@@ -65,6 +68,8 @@ class ChatRequest(BaseModel):
     support_need: Optional[str] = Field(default=None, max_length=500)
     difficulty: Optional[str] = Field(default=None, max_length=50)
     material_type: Optional[str] = Field(default=None, max_length=50)
+    # Structured field for the parent-communication agent
+    communication_type: Optional[Literal["progress", "concern"]] = None
 
     @field_validator("tool_hint")
     @classmethod
@@ -151,6 +156,7 @@ async def chat_endpoint(
         support_need=payload.support_need,
         difficulty=payload.difficulty,
         material_type=payload.material_type,
+        communication_type=payload.communication_type,
     )
 
     return {
