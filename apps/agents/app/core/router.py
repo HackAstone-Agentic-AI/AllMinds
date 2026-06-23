@@ -88,7 +88,7 @@ def run_multi_agent(
 
     guard = check_input(user_input)
     if guard.blocked:
-        return {"text": guard.reason, "youtube_links": [], "image_aids": []}
+        return {"text": guard.reason, "youtube_links": [], "image_aids": [], "media_diagnostics": []}
 
     state = {
         "input":         guard.cleaned,
@@ -123,12 +123,13 @@ def run_multi_agent(
         agent_fn = AGENT_MAP.get(decision, general_agent)
         result = agent_fn(state)
         return {
-            "text":          check_output(result.get("output", "")),
-            "youtube_links": result.get("youtube_links", []),
-            "image_aids":    result.get("image_aids", []),
+            "text":              check_output(result.get("output", "")),
+            "youtube_links":     result.get("youtube_links", []),
+            "image_aids":        result.get("image_aids", []),
+            "media_diagnostics": result.get("media_diagnostics", []),
         }
     except Exception as exc:
         err = str(exc)
         if "api" in err.lower() or "connect" in err.lower() or "key" in err.lower():
-            return {"text": "The AI service is temporarily unavailable. Please check your API keys and try again.", "youtube_links": [], "image_aids": []}
-        return {"text": "An unexpected error occurred. Please try again.", "youtube_links": [], "image_aids": []}
+            return {"text": "The AI service is temporarily unavailable. Please check your API keys and try again.", "youtube_links": [], "image_aids": [], "media_diagnostics": []}
+        return {"text": "An unexpected error occurred. Please try again.", "youtube_links": [], "image_aids": [], "media_diagnostics": []}

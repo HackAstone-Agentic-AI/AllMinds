@@ -83,13 +83,17 @@ const findOrCreateOAuthUser = async ({ email, fullName }) => {
 
     if (userResult.rows.length === 0) {
         const insertResult = await pool.query(
-            `INSERT INTO users (email, password_hash, full_name, role, is_active)
-             VALUES ($1, $2, $3, $4, $5)
+            `INSERT INTO users (email, password_hash, full_name, role, is_active, email_verified)
+             VALUES ($1, $2, $3, $4, $5, $6)
              RETURNING id, email, full_name, role, school_name, province`,
-            [email, '', fullName, 'teacher', true]
+            [email, '', fullName, 'teacher', true, true]
         );
         user = insertResult.rows[0];
     } else {
+        // Ensure existing OAuth users are also marked as verified
+        if (!userResult.rows[0].email_verified) {
+            await pool.query('UPDATE users SET email_verified = true WHERE id = $1', [userResult.rows[0].id]);
+        }
         user = userResult.rows[0];
     }
 

@@ -13,7 +13,29 @@ from app.core.language import language_list_for_frontend
 
 load_dotenv(Path(__file__).resolve().parents[4] / ".env")
 
+import logging as _logging
+_startup_logger = _logging.getLogger("allminds.startup")
+
 app = FastAPI(title="AllMinds API", version="1.0")
+
+
+@app.on_event("startup")
+async def _startup_health_check() -> None:
+    """Log which optional services are configured so failures are visible at boot."""
+    checks = {
+        "GEMINI_API_KEY":       bool(os.getenv("GEMINI_API_KEY")),
+        "GROQ_API_KEY":         bool(os.getenv("GROQ_API_KEY")),
+        "YOUTUBE_API_KEY":      bool(os.getenv("YOUTUBE_API_KEY")),
+        "GEMINI_IMAGE_MODEL":   os.getenv("GEMINI_IMAGE_MODEL", "gemini-2.0-flash-preview-image-generation"),
+        "BACKEND_API_URL":      bool(os.getenv("BACKEND_API_URL")),
+    }
+    for key, value in checks.items():
+        if isinstance(value, bool):
+            status = "OK" if value else "MISSING"
+            level = _startup_logger.info if value else _startup_logger.warning
+            level("[startup] %-25s %s", key, status)
+        else:
+            _startup_logger.info("[startup] %-25s %s", key, value)
 
 allowed_origins = [
     origin.strip()
@@ -132,9 +154,10 @@ async def chat_endpoint(
     )
 
     return {
-        "status":        "success",
-        "input_received": guard.cleaned,
-        "response":      ai_result["text"],
-        "youtube_links": ai_result.get("youtube_links", []),
-        "image_aids":    ai_result.get("image_aids", []),
+        "status":            "success",
+        "input_received":    guard.cleaned,
+        "response":          ai_result["text"],
+        "youtube_links":     ai_result.get("youtube_links", []),
+        "image_aids":        ai_result.get("image_aids", []),
+        "media_diagnostics": ai_result.get("media_diagnostics", []),
     }

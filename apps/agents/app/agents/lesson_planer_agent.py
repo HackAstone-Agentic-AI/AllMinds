@@ -1,6 +1,7 @@
 import logging
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor, Future
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage
@@ -241,6 +242,27 @@ FALLBACK_RESPONSE = (
 )
 
 
+def _build_media_diagnostics(yt_diag: str, img_diag: str) -> list[str]:
+    messages = []
+    if yt_diag not in ("api_ok", "search_fallback"):
+        messages.append(f"YouTube search unavailable ({yt_diag}) — showing search-page links instead.")
+    elif yt_diag == "search_fallback":
+        messages.append("Tip: add a YOUTUBE_API_KEY for curated, verified video results.")
+    if img_diag == "no_key":
+        messages.append("AI image generation requires GEMINI_API_KEY to be configured.")
+    elif img_diag == "sdk_missing":
+        messages.append("AI image generation unavailable — google-genai package not installed.")
+    elif img_diag == "billing_disabled":
+        messages.append("AI image generation unavailable — billing is not enabled on the Gemini API key.")
+    elif img_diag == "quota_exceeded":
+        messages.append("AI image generation unavailable — Gemini quota exceeded. Try again later.")
+    elif img_diag.startswith("model_not_found"):
+        messages.append(f"AI image generation unavailable — {img_diag.split(':', 1)[-1].strip()}.")
+    elif img_diag.startswith("model_error"):
+        messages.append(f"AI image generation failed ({img_diag.split(':', 1)[-1].strip()[:80]}).")
+    return messages
+
+
 def sanitize_input(text: str) -> str:
     return text.strip()[:600]
 
@@ -324,11 +346,12 @@ def lesson_planner_agent(state: dict) -> dict:
 
     if not user_input:
         return {
-            "output":        FALLBACK_RESPONSE,
-            "topic":         "",
-            "status":        "no_input",
-            "youtube_links": [],
-            "image_aids":    [],
+            "output":            FALLBACK_RESPONSE,
+            "topic":             "",
+            "status":            "no_input",
+            "youtube_links":     [],
+            "image_aids":        [],
+            "media_diagnostics": [],
         }
 
     topic_raw = sanitize_input(user_input)
@@ -346,11 +369,12 @@ def lesson_planner_agent(state: dict) -> dict:
 
     if llm is None:
         return {
-            "output":        "GEMINI_API_KEY is missing. Add it to your environment before running chat requests.",
-            "topic":         topic,
-            "status":        "error",
-            "youtube_links": [],
-            "image_aids":    [],
+            "output":            "GEMINI_API_KEY is missing. Add it to your environment before running chat requests.",
+            "topic":             topic,
+            "status":            "error",
+            "youtube_links":     [],
+            "image_aids":        [],
+            "media_diagnostics": ["AI assistant unavailable — GEMINI_API_KEY not configured."],
         }
 
     user_message = (
@@ -360,20 +384,50 @@ def lesson_planner_agent(state: dict) -> dict:
         f"Important: complete every section of the plan without stopping early."
     )
 
-    response = llm.invoke([
-        SystemMessage(content=system_prompt + language_note),
-        HumanMessage(content=user_message),
-    ])
+    # ── Run LLM, YouTube, and image generation concurrently ───────────────────
+    def _call_llm() -> str:
+        resp = llm.invoke([
+            SystemMessage(content=system_prompt + language_note),
+            HumanMessage(content=user_message),
+        ])
+        return resp.content.strip()
 
-    youtube_links = build_lesson_youtube_links(topic, subject=subject, grade=grade)
-    image_aids    = generate_image_aids(topic, subject=subject, grade=grade, context="lesson")
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        text_future: Future[str] = pool.submit(_call_llm)
+        yt_future: Future[tuple] = pool.submit(
+            build_lesson_youtube_links, topic, subject, grade
+        )
+        img_future: Future[tuple] = pool.submit(
+            generate_image_aids, topic, subject, grade, "lesson"
+        )
+
+        try:
+            output_text = text_future.result()
+        except Exception as exc:
+            logger.error("Lesson planner LLM call failed: %s", exc)
+            output_text = "The AI assistant encountered an error generating the lesson plan. Please try again."
+
+        try:
+            youtube_links, yt_diag = yt_future.result()
+        except Exception as exc:
+            logger.warning("YouTube future failed: %s", exc)
+            youtube_links, yt_diag = [], f"api_error:{exc}"
+
+        try:
+            image_aids, img_diag = img_future.result()
+        except Exception as exc:
+            logger.warning("Image generation future failed: %s", exc)
+            image_aids, img_diag = [], f"model_error:{exc}"
+
+    media_diagnostics = _build_media_diagnostics(yt_diag, img_diag)
 
     return {
-        "output":        response.content.strip(),
-        "topic":         topic,
-        "status":        "ok",
-        "youtube_links": youtube_links,
-        "image_aids":    image_aids,
+        "output":            output_text,
+        "topic":             topic,
+        "status":            "ok",
+        "youtube_links":     youtube_links,
+        "image_aids":        image_aids,
+        "media_diagnostics": media_diagnostics,
     }
 
 

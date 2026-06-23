@@ -11,6 +11,7 @@ import {
   ExternalLink,
   FileText,
   Image as ImageIcon,
+  Info,
   Lightbulb,
   Save,
   Sparkles,
@@ -51,6 +52,7 @@ function AssessmentPlannerInner() {
   const [generatedPlan, setGeneratedPlan] = useState('');
   const [youtubeLinks, setYoutubeLinks] = useState<YoutubeLink[]>([]);
   const [imageAids, setImageAids] = useState<ImageAid[]>([]);
+  const [mediaDiagnostics, setMediaDiagnostics] = useState<string[]>([]);
   const [planTitle, setPlanTitle] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -112,6 +114,7 @@ function AssessmentPlannerInner() {
     setSavedPlanId(null);
     setYoutubeLinks([]);
     setImageAids([]);
+    setMediaDiagnostics([]);
 
     try {
       const materialLabels: Record<string, string> = {
@@ -147,6 +150,7 @@ function AssessmentPlannerInner() {
       setGeneratedPlan(response.response || 'No plan was returned.');
       setYoutubeLinks(Array.isArray(response.youtube_links) ? response.youtube_links : []);
       setImageAids(Array.isArray(response.image_aids) ? response.image_aids : []);
+      setMediaDiagnostics(Array.isArray(response.media_diagnostics) ? response.media_diagnostics : []);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to generate the plan.');
     } finally {
@@ -182,6 +186,7 @@ function AssessmentPlannerInner() {
       setPlanTitle('');
       setYoutubeLinks([]);
       setImageAids([]);
+      setMediaDiagnostics([]);
       router.push('/dashboard/tools/assessment-planner');
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to delete the plan.');
@@ -662,6 +667,18 @@ function AssessmentPlannerInner() {
                     </button>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* Media diagnostics — surfaces why videos/images may be unavailable */}
+            {mediaDiagnostics.length > 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-1.5">
+                {mediaDiagnostics.map((msg) => (
+                  <p key={msg} className="flex items-start gap-2 text-xs text-amber-800">
+                    <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                    <span>{msg}</span>
+                  </p>
+                ))}
               </div>
             )}
 

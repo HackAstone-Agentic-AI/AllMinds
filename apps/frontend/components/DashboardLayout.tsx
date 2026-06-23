@@ -36,6 +36,7 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
   const [showNotifications, setShowNotifications] = useState(false);
   const [showLanguageMenu, setShowLanguageMenu] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [desktopCollapsed, setDesktopCollapsed] = useState(false);
   const router = useRouter();
   const { language, setLanguage, t } = useLanguage();
   const { setTheme } = usePreferences();
@@ -75,6 +76,27 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
     return () => document.removeEventListener('keydown', onKey);
   }, []);
 
+  // Restore the desktop collapse preference on mount.
+  useEffect(() => {
+    if (localStorage.getItem('allminds_sidebar_collapsed') === 'true') {
+      setDesktopCollapsed(true);
+    }
+  }, []);
+
+  // One hamburger drives both behaviours: a slide-in drawer on mobile,
+  // a persistent collapse on desktop (≥ md).
+  const toggleSidebar = () => {
+    if (typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches) {
+      setDesktopCollapsed((collapsed) => {
+        const next = !collapsed;
+        localStorage.setItem('allminds_sidebar_collapsed', String(next));
+        return next;
+      });
+    } else {
+      setSidebarOpen((open) => !open);
+    }
+  };
+
   useEffect(() => {
     setSidebarOpen(false);
   }, [router]);
@@ -112,7 +134,11 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
   ];
 
   return (
-    <div className="app-theme-surface min-h-screen bg-slate-50 md:pl-64">
+    <div
+      className={`app-theme-surface min-h-screen bg-slate-50 transition-[padding] duration-300 ease-in-out ${
+        desktopCollapsed ? 'md:pl-0' : 'md:pl-64'
+      }`}
+    >
       {/* Mobile backdrop */}
       {sidebarOpen && (
         <div
@@ -126,7 +152,7 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
         id="main-sidebar"
         aria-label="Sidebar navigation"
         className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-slate-200 bg-white transition-transform duration-300 ease-in-out
-          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}
+          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} ${desktopCollapsed ? 'md:-translate-x-full' : 'md:translate-x-0'}`}
       >
         <button
           onClick={() => router.push('/dashboard')}
@@ -197,19 +223,21 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white">
         <div className="flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-3">
-            {/* Hamburger — visible on mobile, hidden on desktop */}
+            {/* Hamburger — drawer toggle on mobile, collapse toggle on desktop */}
             <button
-              onClick={() => setSidebarOpen((open) => !open)}
-              className="rounded-lg p-2 text-slate-600 transition hover:bg-slate-100 md:hidden"
-              aria-label={sidebarOpen ? 'Close navigation menu' : 'Open navigation menu'}
-              aria-expanded={sidebarOpen}
+              onClick={toggleSidebar}
+              className="rounded-lg p-2 text-slate-600 transition hover:bg-slate-100"
+              aria-label={
+                sidebarOpen || !desktopCollapsed ? 'Close navigation menu' : 'Open navigation menu'
+              }
+              aria-expanded={sidebarOpen || !desktopCollapsed}
               aria-controls="main-sidebar"
             >
               {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </button>
             <button
               onClick={() => router.push('/dashboard')}
-              className="flex items-center gap-2 md:hidden"
+              className={`flex items-center gap-2 ${desktopCollapsed ? '' : 'md:hidden'}`}
               aria-label="Go to All Minds dashboard"
             >
               <Image

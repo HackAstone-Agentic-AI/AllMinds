@@ -1,7 +1,7 @@
 'use client';
 
 import DashboardLayout from '@/components/DashboardLayout';
-import { Eye, FileText, Users, Calendar } from 'lucide-react';
+import { Eye, FileText, Users, Calendar, BarChart3 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 export default function ToolsPage() {
@@ -40,6 +40,14 @@ export default function ToolsPage() {
       color: 'purple',
       href: '/dashboard/tools/schedule-tracking',
     },
+    {
+      id: 'learner-analytics',
+      name: 'Learner Analytics',
+      description: 'Track engagement, attendance, and progress with AI-driven insights',
+      icon: BarChart3,
+      color: 'indigo',
+      href: '/dashboard/learnerAnalytics',
+    },
   ];
 
   const getColorClasses = (color: string) => {
@@ -68,6 +76,12 @@ export default function ToolsPage() {
         iconColor: 'text-purple-600',
         border: 'hover:border-purple-300',
       },
+      indigo: {
+        bg: 'bg-indigo-50',
+        icon: 'bg-indigo-100',
+        iconColor: 'text-indigo-600',
+        border: 'hover:border-indigo-300',
+      },
     };
     return colors[color as keyof typeof colors] || colors.blue;
   };
@@ -82,7 +96,7 @@ export default function ToolsPage() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {tools.map((tool) => {
             const colors = getColorClasses(tool.color);
             return (
@@ -122,7 +136,7 @@ export default function ToolsPage() {
               Each tool is powered by specialized AI agents designed to assist teachers in
               creating inclusive learning environments for neurodiverse students. These agents
               work together to provide comprehensive support across visual learning, assessment
-              creation, learner profiling, and schedule management.
+              creation, learner profiling, schedule management, and learner analytics.
             </p>
             <p className="text-slate-600 text-sm">
               Click on any tool above to get started with AI-assisted teaching support.

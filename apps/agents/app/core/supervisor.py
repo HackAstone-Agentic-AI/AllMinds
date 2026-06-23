@@ -97,6 +97,36 @@ def extract_agent(text: str) -> str:
     return "general"
 
 
+# Keyword-based fallback routing used when the LLM classifier is unavailable.
+# Each entry is (keywords_to_match, agent_name). First match wins.
+_KEYWORD_ROUTES: list[tuple[list[str], str]] = [
+    (["rag", "dcaps", "caps", "foundation phase", "intermediate phase", "senior phase",
+      "curriculum document", "literacy", "numeracy", "life skills", "home language"], "rag"),
+    (["visual", "now/next", "emotion chart", "token board", "social story",
+      "picture card", "colour-coded", "feeling chart", "visual aid", "visual support",
+      "graphic organiser", "choice board", "sensory menu", "calm-down"], "visual"),
+    (["schedule", "timetable", "daily routine", "morning routine", "transition routine",
+      "countdown", "visual timer", "time-block", "reminder system"], "schedule"),
+    (["lesson", "lesson plan", "worksheet", "homework", "test", "assessment",
+      "differentiat", "scaffold", "learning objective", "teaching activity",
+      "adapt", "simplify this"], "lesson"),
+    (["analytics", "track", "graph", "behaviour frequency", "progress monitoring",
+      "intervention outcome", "attendance pattern", "sensory trigger log",
+      "iep goal completion", "data"], "analytics"),
+    (["image", "audio", "video file", "upload", "transcribe", "pdf", "file",
+      "convert text", "multimodal", "analyse this"], "multimodal"),
+]
+
+
+def _keyword_route(text: str) -> str:
+    """Best-effort keyword routing when the LLM classifier is unavailable."""
+    lower = text.lower()
+    for keywords, agent in _KEYWORD_ROUTES:
+        if any(kw in lower for kw in keywords):
+            return agent
+    return "general"
+
+
 def supervisor_agent(state: dict) -> dict:
     """
     Routes a neurodivergent teaching assistant request to the correct worker agent.
@@ -107,6 +137,9 @@ def supervisor_agent(state: dict) -> dict:
         {"decision": str}      — one of: general | lesson | multimodal |
                                           schedule | visual | analytics | rag
     """
+    import logging
+    logger = logging.getLogger(__name__)
+
     user_input = state.get("input", "").strip()
 
     if not user_input:
@@ -114,7 +147,13 @@ def supervisor_agent(state: dict) -> dict:
 
     llm = get_llm()
     if llm is None:
-        return {"decision": "general"}
+        # GROQ_API_KEY missing — use keyword routing rather than silently
+        # collapsing all requests to "general".
+        logger.warning(
+            "GROQ_API_KEY not set; falling back to keyword-based routing for: %r",
+            user_input[:80],
+        )
+        return {"decision": _keyword_route(user_input)}
 
     response = llm.invoke([
         SystemMessage(content=SYSTEM_PROMPT),

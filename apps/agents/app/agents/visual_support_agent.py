@@ -1,8 +1,13 @@
+import logging
 import os
+from concurrent.futures import ThreadPoolExecutor, Future
+
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from app.core.language import get_language_instruction
 from app.core.visual_media import build_visual_youtube_links, generate_image_aids
+
+logger = logging.getLogger(__name__)
 
 # ─── LLM Setup ────────────────────────────────────────────────────────────────
 
@@ -86,14 +91,43 @@ LANGUAGE RULES:
 # ─── Input Sanitization ───────────────────────────────────────────────────────
 
 def sanitize_input(text: str) -> str:
-    """
-    Truncates to 300 chars — a visual support topic needs no more.
-    Prevents prompt injection via the topic field.
-    """
     return text.strip()[:300]
 
 
-# ─── Main Agent ───────────────────────────────────────────────────────────────
+# ─── Output validation ────────────────────────────────────────────────────────
+
+_REQUIRED_SECTIONS = ["VISUAL SUPPORT 1", "VISUAL SUPPORT 2", "INTERACTIVE IDEA", "QUICK-MAKE TIP"]
+
+
+def _validate_output(text: str) -> bool:
+    """Check the LLM followed the required output structure."""
+    return all(section in text for section in _REQUIRED_SECTIONS)
+
+
+# ─── Media diagnostic builder ─────────────────────────────────────────────────
+
+def _build_media_diagnostics(yt_diag: str, img_diag: str) -> list[str]:
+    messages = []
+    if yt_diag not in ("api_ok", "search_fallback"):
+        messages.append(f"YouTube search unavailable ({yt_diag}) — showing search-page links instead.")
+    elif yt_diag == "search_fallback":
+        messages.append("Tip: add a YOUTUBE_API_KEY for curated, verified video results.")
+    if img_diag == "no_key":
+        messages.append("AI image generation requires GEMINI_API_KEY to be configured.")
+    elif img_diag == "sdk_missing":
+        messages.append("AI image generation unavailable — google-genai package not installed.")
+    elif img_diag == "billing_disabled":
+        messages.append("AI image generation unavailable — billing is not enabled on the Gemini API key.")
+    elif img_diag == "quota_exceeded":
+        messages.append("AI image generation unavailable — Gemini quota exceeded. Try again later.")
+    elif img_diag.startswith("model_not_found"):
+        messages.append(f"AI image generation unavailable — {img_diag.split(':', 1)[-1].strip()}.")
+    elif img_diag.startswith("model_error"):
+        messages.append(f"AI image generation failed ({img_diag.split(':', 1)[-1].strip()[:80]}).")
+    return messages
+
+
+# ─── Fallback ─────────────────────────────────────────────────────────────────
 
 FALLBACK_RESPONSE = (
     "No topic was provided. Please describe what you would like visual support "
@@ -102,9 +136,12 @@ FALLBACK_RESPONSE = (
 )
 
 
+# ─── Main Agent ───────────────────────────────────────────────────────────────
+
 def visual_support_agent(state: dict) -> dict:
     """
     Generates classroom-ready visual support ideas for neurodivergent learners.
+    Runs LLM, YouTube search, and image generation concurrently.
 
     Args:
         state: {
@@ -116,22 +153,24 @@ def visual_support_agent(state: dict) -> dict:
 
     Returns:
         {
-            "output":         str,          # Structured visual support suggestions
-            "topic":          str,          # Sanitized input topic (for logging/chaining)
-            "youtube_links":  list[dict],   # Always 3 — [{"label": str, "url": str}]
-            "image_aids":     list[dict],   # 0–2 — [{"label": str, "url": str}] data URIs
-            "status":         str,          # "ok" | "no_input"
+            "output":           str,        # Structured visual support suggestions
+            "topic":            str,        # Sanitized input topic
+            "youtube_links":    list[dict], # [{"label", "url", "thumbnail"}]
+            "image_aids":       list[dict], # [{"label", "url"}] data URIs
+            "media_diagnostics":list[str],  # User-facing messages for any failures
+            "status":           str,        # "ok" | "no_input" | "error"
         }
     """
     user_input = state.get("input", "").strip()
 
     if not user_input:
         return {
-            "output":        FALLBACK_RESPONSE,
-            "topic":         "",
-            "youtube_links": [],
-            "image_aids":    [],
-            "status":        "no_input",
+            "output":            FALLBACK_RESPONSE,
+            "topic":             "",
+            "youtube_links":     [],
+            "image_aids":        [],
+            "media_diagnostics": [],
+            "status":            "no_input",
         }
 
     topic = sanitize_input(user_input)
@@ -141,54 +180,83 @@ def visual_support_agent(state: dict) -> dict:
         return {
             "output": "GEMINI_API_KEY is missing. Add it to your environment before running chat requests.",
             "topic": topic,
-            "youtube_links": [],
-            "image_aids":    [],
+            "youtube_links":     [],
+            "image_aids":        [],
+            "media_diagnostics": ["AI assistant unavailable — GEMINI_API_KEY not configured."],
             "status": "error",
         }
 
     # ── Optional context enrichment ───────────────────────────────────────────
     context_lines = []
-
     age = state.get("learner_age")
     if age:
         context_lines.append(f"Learner age: {age} years old.")
-
     profile = state.get("profile")
     if profile:
         context_lines.append(f"Learner profile: {profile}.")
-
     setting = state.get("setting")
     if setting:
         context_lines.append(
             f"Setting: {setting} — tailor material availability advice accordingly."
         )
-
     context_block = (
         "\n\nADDITIONAL CONTEXT:\n" + "\n".join(context_lines)
         if context_lines else ""
     )
 
+    language_note = get_language_instruction(state)
     user_message = (
         f"Please suggest visual supports for the following topic:\n\n"
         f"TOPIC: {topic}"
         f"{context_block}"
     )
 
-    # ── LLM Call ──────────────────────────────────────────────────────────────
-    language_note = get_language_instruction(state)
-    response = llm.invoke([
-        SystemMessage(content=VISUAL_SUPPORT_SYSTEM_PROMPT + language_note),
-        HumanMessage(content=user_message),
-    ])
+    # ── Run LLM, YouTube, and image generation concurrently ───────────────────
+    def _call_llm() -> str:
+        resp = llm.invoke([
+            SystemMessage(content=VISUAL_SUPPORT_SYSTEM_PROMPT + language_note),
+            HumanMessage(content=user_message),
+        ])
+        return resp.content.strip()
 
-    # ── YouTube links and image aids — always generated for on-topic requests ──
-    youtube_links = build_visual_youtube_links(topic)
-    image_aids    = generate_image_aids(topic, context="visual")
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        text_future: Future[str] = pool.submit(_call_llm)
+        yt_future: Future[tuple] = pool.submit(build_visual_youtube_links, topic)
+        img_future: Future[tuple] = pool.submit(generate_image_aids, topic, "", "", "visual")
+
+        # Collect results — each future is guarded independently so one failure
+        # never blocks the others from completing.
+        try:
+            output_text = text_future.result()
+        except Exception as exc:
+            logger.error("Visual support LLM call failed: %s", exc)
+            output_text = "The AI assistant encountered an error. Please try again."
+
+        try:
+            youtube_links, yt_diag = yt_future.result()
+        except Exception as exc:
+            logger.warning("YouTube future failed: %s", exc)
+            youtube_links, yt_diag = [], f"api_error:{exc}"
+
+        try:
+            image_aids, img_diag = img_future.result()
+        except Exception as exc:
+            logger.warning("Image generation future failed: %s", exc)
+            image_aids, img_diag = [], f"model_error:{exc}"
+
+    # ── Structured output validation — one retry if sections are missing ───────
+    if not _validate_output(output_text):
+        logger.warning("Visual support output missing required sections — retrying")
+        try:
+            output_text = _call_llm()
+        except Exception as exc:
+            logger.error("Retry LLM call failed: %s", exc)
 
     return {
-        "output":        response.content.strip(),
-        "topic":         topic,
-        "youtube_links": youtube_links,
-        "image_aids":    image_aids,
-        "status":        "ok",
+        "output":            output_text,
+        "topic":             topic,
+        "youtube_links":     youtube_links,
+        "image_aids":        image_aids,
+        "media_diagnostics": _build_media_diagnostics(yt_diag, img_diag),
+        "status":            "ok",
     }

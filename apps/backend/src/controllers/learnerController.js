@@ -86,7 +86,7 @@ const bulkCreateLearners = async (req, res) => {
         await client.query('COMMIT');
         res.status(201).json({ message: `${insertedCount} learners uploaded` });
     } catch (err) {
-        await client.query('ROLLBACK').catch(() => null);
+        await client.query('ROLLBACK').catch((rbErr) => console.error('Rollback error:', rbErr));
         console.error(err);
         const validationMessage =
             typeof err.message === 'string' && err.message.startsWith('Learner row ')

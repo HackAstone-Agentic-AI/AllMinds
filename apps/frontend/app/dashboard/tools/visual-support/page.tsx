@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
-import { AlertCircle, ArrowLeft, Download, ExternalLink, Eye, Image as ImageIcon, MessageSquare, Send, Sparkles, User } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Download, ExternalLink, Eye, Image as ImageIcon, Info, MessageSquare, Send, Sparkles, User } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 
@@ -15,6 +15,7 @@ interface TeacherProfileSummary {
 interface YoutubeLink {
   label: string;
   url: string;
+  thumbnail?: string;
 }
 
 interface ImageAid {
@@ -28,6 +29,7 @@ interface ChatMessage {
   content: string;
   youtubeLinks?: YoutubeLink[];
   imageAids?: ImageAid[];
+  mediaDiagnostics?: string[];
 }
 
 const starterPrompts = [
@@ -104,6 +106,7 @@ export default function VisualSupportPage() {
         content: response.response || 'No response was returned.',
         youtubeLinks: Array.isArray(response.youtube_links) ? response.youtube_links : [],
         imageAids: Array.isArray(response.image_aids) ? response.image_aids : [],
+        mediaDiagnostics: Array.isArray(response.media_diagnostics) ? response.media_diagnostics : [],
       };
 
       setMessages((current) => [...current, assistantMessage]);
@@ -206,7 +209,15 @@ export default function VisualSupportPage() {
                             rel="noopener noreferrer"
                             className="flex items-center gap-2 text-xs text-blue-700 hover:text-blue-900 hover:underline"
                           >
-                            <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                            {link.thumbnail ? (
+                              <img
+                                src={link.thumbnail}
+                                alt=""
+                                className="w-12 h-9 object-cover rounded flex-shrink-0 border border-slate-200"
+                              />
+                            ) : (
+                              <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                            )}
                             <span className="line-clamp-2">{link.label}</span>
                           </a>
                         ))}
@@ -233,6 +244,16 @@ export default function VisualSupportPage() {
                               <Download className="w-3 h-3" /> Download
                             </a>
                           </div>
+                        ))}
+                      </div>
+                    )}
+                    {message.mediaDiagnostics && message.mediaDiagnostics.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-slate-200 space-y-1">
+                        {message.mediaDiagnostics.map((msg) => (
+                          <p key={msg} className="flex items-start gap-1.5 text-xs text-amber-700">
+                            <Info className="w-3 h-3 flex-shrink-0 mt-0.5" />
+                            <span>{msg}</span>
+                          </p>
                         ))}
                       </div>
                     )}

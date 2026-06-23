@@ -1,15 +1,25 @@
 """
-Shared visual media helpers used by both the lesson planner and visual support agents.
+Shared visual media helpers: YouTube search and Gemini image generation.
+
+Both helpers return (data, diagnostic) tuples so callers can surface failures
+as soft UI banners without ever blocking the text response.
+
+Diagnostics:
+  YouTube: "api_ok" | "search_fallback" | "api_error:<msg>"
+  Images:  "ok" | "no_key" | "sdk_missing" | "model_not_found" |
+           "billing_disabled" | "quota_exceeded" | "model_error:<msg>"
 """
 import base64
+import json
 import logging
 import os
 from urllib.parse import quote_plus
+from urllib.request import urlopen
+from urllib.error import HTTPError, URLError
 
 logger = logging.getLogger(__name__)
 
-
-# ── YouTube link builders ─────────────────────────────────────────────────────
+# ── YouTube ───────────────────────────────────────────────────────────────────
 
 _LESSON_YOUTUBE_TEMPLATES = [
     "teaching {topic} {grade_ctx} inclusive classroom strategies",
@@ -23,68 +33,122 @@ _VISUAL_YOUTUBE_TEMPLATES = [
     "{topic} early years SEND teaching resource",
 ]
 
+_YOUTUBE_API_URL = "https://www.googleapis.com/youtube/v3/search"
 
-def build_lesson_youtube_links(topic: str, subject: str = "", grade: str = "") -> list[dict]:
+
+def _youtube_api_search(queries: list[str]) -> tuple[list[dict], str]:
+    """
+    Call YouTube Data API v3 for each query, one video per query.
+    Returns (videos, diagnostic).
+    Falls back with ("api_error:<msg>") on any HTTP failure.
+    """
+    api_key = os.getenv("YOUTUBE_API_KEY", "").strip()
+    if not api_key:
+        return [], "no_key"
+
+    videos = []
+    for query in queries:
+        url = (
+            f"{_YOUTUBE_API_URL}?part=snippet&type=video"
+            f"&safeSearch=strict&videoEmbeddable=true&maxResults=1"
+            f"&q={quote_plus(query)}&key={api_key}"
+        )
+        try:
+            with urlopen(url, timeout=6) as resp:
+                data = json.loads(resp.read().decode())
+            items = data.get("items", [])
+            if items:
+                item = items[0]
+                vid_id = item["id"]["videoId"]
+                title = item["snippet"]["title"]
+                thumbs = item["snippet"].get("thumbnails", {})
+                thumbnail = (
+                    thumbs.get("medium", thumbs.get("default", {})).get("url", "")
+                )
+                videos.append({
+                    "label": title,
+                    "url": f"https://www.youtube.com/watch?v={vid_id}",
+                    "thumbnail": thumbnail,
+                })
+        except HTTPError as exc:
+            logger.warning("YouTube API HTTP error for %r: %s", query, exc)
+            return [], f"api_error:HTTP {exc.code}"
+        except URLError as exc:
+            logger.warning("YouTube API network error for %r: %s", query, exc)
+            return [], f"api_error:{exc.reason}"
+        except Exception as exc:
+            logger.warning("YouTube API unexpected error for %r: %s", query, exc)
+            return [], f"api_error:{str(exc)[:80]}"
+
+    return videos, "api_ok"
+
+
+def _search_url_fallback(queries: list[str]) -> list[dict]:
+    """YouTube search-results page links when the API is unavailable."""
+    return [
+        {
+            "label": query,
+            "url": f"https://www.youtube.com/results?search_query={quote_plus(query)}",
+            "thumbnail": "",
+        }
+        for query in queries
+    ]
+
+
+def build_lesson_youtube_links(
+    topic: str, subject: str = "", grade: str = ""
+) -> tuple[list[dict], str]:
+    """Returns (links, diagnostic)."""
     grade_ctx = f"Grade {grade}" if grade else "primary school"
     subject_ctx = subject if subject else "classroom"
-    links = []
-    for template in _LESSON_YOUTUBE_TEMPLATES:
-        query = template.format(topic=topic, grade_ctx=grade_ctx, subject_ctx=subject_ctx)
-        url = f"https://www.youtube.com/results?search_query={quote_plus(query)}"
-        links.append({"label": query, "url": url})
-    return links
+    queries = [
+        t.format(topic=topic, grade_ctx=grade_ctx, subject_ctx=subject_ctx)
+        for t in _LESSON_YOUTUBE_TEMPLATES
+    ]
+    videos, diag = _youtube_api_search(queries)
+    if videos:
+        return videos, diag
+    # Fall back to search-result URLs so the frontend always gets something
+    return _search_url_fallback(queries), "search_fallback" if diag == "no_key" else diag
 
 
-def build_visual_youtube_links(topic: str) -> list[dict]:
-    links = []
-    for template in _VISUAL_YOUTUBE_TEMPLATES:
-        query = template.format(topic=topic)
-        url = f"https://www.youtube.com/results?search_query={quote_plus(query)}"
-        links.append({"label": query, "url": url})
-    return links
+def build_visual_youtube_links(topic: str) -> tuple[list[dict], str]:
+    """Returns (links, diagnostic)."""
+    queries = [t.format(topic=topic) for t in _VISUAL_YOUTUBE_TEMPLATES]
+    videos, diag = _youtube_api_search(queries)
+    if videos:
+        return videos, diag
+    return _search_url_fallback(queries), "search_fallback" if diag == "no_key" else diag
 
 
 # ── Image generation ──────────────────────────────────────────────────────────
 
-def generate_image_aids(
-    topic: str,
-    subject: str = "",
-    grade: str = "",
-    context: str = "lesson",
-) -> list[dict]:
-    """
-    Generate 1–2 educational visual aid images via Gemini image generation.
-    Returns list of {"label": str, "url": str} where url is a data URI.
-    Silently returns [] on any failure so text output is never blocked.
-
-    context: "lesson" for lesson plan aids, "visual" for visual support aids.
-    """
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        return []
-
+def _image_prompts(
+    topic: str, subject: str, grade: str, context: str
+) -> tuple[list[str], list[str]]:
     grade_ctx = f"Grade {grade} " if grade else ""
     subject_ctx = f"{subject} " if subject else ""
-
     if context == "visual":
-        prompts = [
-            (
-                f"Create a simple, clear classroom visual support card for the topic '{topic}'. "
-                f"Style: bold outlines, max 3 colours, white background, large icons, "
-                f"minimal text, suitable for neurodivergent learners aged 3–10. "
-                f"Classroom display format."
-            ),
-            (
-                f"Create a now/next board or step-by-step visual task card illustrating '{topic}'. "
-                f"Clean white background, numbered steps, simple icons, inclusive classroom style."
-            ),
-        ]
-        labels = [
-            f"Visual Support Card: {topic}",
-            f"Step-by-Step Visual: {topic}",
-        ]
-    else:
-        prompts = [
+        return (
+            [
+                (
+                    f"Create a simple, clear classroom visual support card for the topic '{topic}'. "
+                    f"Style: bold outlines, max 3 colours, white background, large icons, "
+                    f"minimal text, suitable for neurodivergent learners aged 3–10. "
+                    f"Classroom display format."
+                ),
+                (
+                    f"Create a now/next board or step-by-step visual task card illustrating '{topic}'. "
+                    f"Clean white background, numbered steps, simple icons, inclusive classroom style."
+                ),
+            ],
+            [
+                f"Visual Support Card: {topic}",
+                f"Step-by-Step Visual: {topic}",
+            ],
+        )
+    return (
+        [
             (
                 f"Create a simple, clear educational classroom display poster for teaching "
                 f"'{topic}' in a {grade_ctx}{subject_ctx}lesson. "
@@ -96,13 +160,35 @@ def generate_image_aids(
                 f"about '{topic}'. Show numbered steps with simple icons. "
                 f"Clean white background, bold outlines, inclusive classroom style."
             ),
-        ]
-        labels = [
+        ],
+        [
             f"Concept Diagram: {topic}",
             f"Activity Task Card: {topic}",
-        ]
+        ],
+    )
 
-    images = []
+
+def generate_image_aids(
+    topic: str,
+    subject: str = "",
+    grade: str = "",
+    context: str = "lesson",
+) -> tuple[list[dict], str]:
+    """
+    Generate 1–2 educational visual aid images via Gemini image generation.
+    Returns (images, diagnostic).
+    Never raises — text output is never blocked by image failure.
+    """
+    api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not api_key:
+        return [], "no_key"
+
+    model = os.getenv(
+        "GEMINI_IMAGE_MODEL", "gemini-2.0-flash-preview-image-generation"
+    )
+    prompts, labels = _image_prompts(topic, subject, grade, context)
+    images: list[dict] = []
+
     try:
         from google import genai  # type: ignore[import-not-found]
         from google.genai import types  # type: ignore[import-not-found]
@@ -112,7 +198,7 @@ def generate_image_aids(
         for i, (prompt, label) in enumerate(zip(prompts, labels)):
             try:
                 response = client.models.generate_content(
-                    model="gemini-2.0-flash-preview-image-generation",
+                    model=model,
                     contents=prompt,
                     config=types.GenerateContentConfig(
                         response_modalities=["IMAGE"],
@@ -127,14 +213,29 @@ def generate_image_aids(
                             else raw
                         )
                         mime = part.inline_data.mime_type or "image/png"
-                        images.append({"label": label, "url": f"data:{mime};base64,{img_b64}"})
+                        images.append(
+                            {"label": label, "url": f"data:{mime};base64,{img_b64}"}
+                        )
                         break
-            except Exception as img_exc:
-                logger.warning("Image %d generation failed: %s", i + 1, img_exc)
+            except Exception as exc:
+                msg = str(exc)
+                logger.warning("Image %d generation failed: %s", i + 1, exc)
+                if "quota" in msg.lower() or "429" in msg:
+                    return images, "quota_exceeded"
+                if any(k in msg.lower() for k in ("permission", "billing", "403")):
+                    return images, "billing_disabled"
+                if "not found" in msg.lower() or "404" in msg:
+                    return images, (
+                        f"model_not_found:'{model}' — "
+                        f"set GEMINI_IMAGE_MODEL env var to override"
+                    )
+                return images, f"model_error:{msg[:120]}"
 
     except ImportError:
-        logger.info("google-genai not installed; image generation skipped")
+        logger.info("google-genai package not installed; image generation skipped")
+        return [], "sdk_missing"
     except Exception as exc:
         logger.warning("Image generation session failed: %s", exc)
+        return images, f"model_error:{str(exc)[:120]}"
 
-    return images
+    return images, "ok" if images else f"model_error:no image parts returned by {model}"

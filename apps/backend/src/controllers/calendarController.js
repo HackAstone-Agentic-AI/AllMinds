@@ -103,6 +103,15 @@ function httpsGet(url, accessToken, redirectsLeft = 3) {
             const { statusCode, headers } = res;
             if ([301, 302, 307, 308].includes(statusCode) && headers.location && redirectsLeft > 0) {
                 res.resume(); // discard redirect body
+                let redirectUrl;
+                try { redirectUrl = new URL(headers.location); } catch {
+                    reject(new Error('Invalid redirect URL from Google'));
+                    return;
+                }
+                if (redirectUrl.protocol !== 'https:' || !redirectUrl.hostname.endsWith('.googleapis.com')) {
+                    reject(new Error(`Blocked redirect to untrusted host: ${redirectUrl.hostname}`));
+                    return;
+                }
                 httpsGet(headers.location, accessToken, redirectsLeft - 1).then(resolve, reject);
                 return;
             }

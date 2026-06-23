@@ -2,9 +2,12 @@ const pool = require('../config/database');
 
 // Get dashboard statistics for admin
 const getAdminStats = async (req, res) => {
-    const schoolId = req.user.school_id || (await getSchoolIdByAdmin(req.user.id));
-
     try {
+        const schoolId = req.user.school_id || (await getSchoolIdByAdmin(req.user.id));
+        if (!schoolId) {
+            return res.status(404).json({ error: 'No school associated with this admin account' });
+        }
+
         // Get counts
         const teacherCount = await pool.query(
             'SELECT COUNT(*) FROM users WHERE role = $1 AND school_name = (SELECT name FROM schools WHERE id = $2)',

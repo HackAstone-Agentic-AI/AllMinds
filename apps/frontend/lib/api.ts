@@ -13,10 +13,12 @@ export class ApiError extends Error {
 
 async function request<T = any>(endpoint: string, options?: RequestInit): Promise<T> {
   const token = localStorage.getItem('allminds_token');
+  const isFormData = options?.body instanceof FormData;
   const res = await fetch(`${API_BASE}${endpoint}`, {
     ...options,
     headers: {
-      'Content-Type': 'application/json',
+      // Let the browser set Content-Type automatically for FormData (multipart boundary)
+      ...(!isFormData ? { 'Content-Type': 'application/json' } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options?.headers,
     },
