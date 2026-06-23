@@ -267,7 +267,7 @@ function getProgressAnalytics(
     .filter((value) => !Number.isNaN(value) && value > 0);
 
   const attendanceValues = records
-    .map((record) => {
+    .map((record): number | null => {
       const attendance = String(
         record.progress_data?.attendance || ''
       ).toLowerCase();
@@ -277,7 +277,7 @@ function getProgressAnalytics(
         ? 0
         : null;
     })
-    .filter((value): value is 0 | 1 => value !== null);
+    .filter((value): value is number => value !== null);
 
   const engagementAverage = average(engagementValues);
   const taskCompletionAverage = average(taskCompletionValues);
