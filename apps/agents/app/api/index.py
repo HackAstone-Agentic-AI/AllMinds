@@ -41,6 +41,8 @@ class ChatRequest(BaseModel):
     subject: Optional[str] = Field(default=None, max_length=100)
     topic: Optional[str] = Field(default=None, max_length=200)
     support_need: Optional[str] = Field(default=None, max_length=500)
+    difficulty: Optional[str] = Field(default=None, max_length=50)
+    material_type: Optional[str] = Field(default=None, max_length=50)
 
     @field_validator("tool_hint")
     @classmethod
@@ -125,6 +127,8 @@ async def chat_endpoint(
         subject=payload.subject,
         topic=payload.topic,
         support_need=payload.support_need,
+        difficulty=payload.difficulty,
+        material_type=payload.material_type,
     )
 
     return {

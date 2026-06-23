@@ -80,6 +80,8 @@ def run_multi_agent(
     subject: Optional[str] = None,
     topic: Optional[str] = None,
     support_need: Optional[str] = None,
+    difficulty: Optional[str] = None,
+    material_type: Optional[str] = None,
 ) -> dict:
     if records is None:
         records = []
@@ -98,6 +100,8 @@ def run_multi_agent(
         "subject":       subject or "",
         "topic":         topic or "",
         "support_need":  support_need or "",
+        "difficulty":    difficulty or "",
+        "material_type": material_type or "",
     }
 
     try:

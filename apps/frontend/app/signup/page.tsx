@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowRight, Lock, Mail, UserRound } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Lock, Mail, UserRound } from 'lucide-react';
 import AuthShell from '@/components/AuthShell';
 import { api } from '@/lib/api';
 
@@ -18,6 +18,8 @@ export default function SignupPage() {
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [registeredEmail, setRegisteredEmail] = useState('');
+  const [resending, setResending] = useState(false);
   const router = useRouter();
 
   const handleChange = (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -40,7 +42,7 @@ export default function SignupPage() {
     setLoading(true);
     try {
       const fullName = `${formData.title} ${formData.name} ${formData.surname}`.trim();
-      const data = await api.register({
+      await api.register({
         email: formData.email,
         password: formData.password,
         full_name: fullName,
@@ -51,9 +53,7 @@ export default function SignupPage() {
         province: '',
         city: '',
       });
-      localStorage.setItem('allminds_token', data.token);
-      localStorage.setItem('allminds_user', JSON.stringify(data.user));
-      router.push('/dashboard');
+      setRegisteredEmail(formData.email);
     } catch (err: any) {
       setError(err.message || 'Registration failed');
     } finally {
@@ -64,6 +64,41 @@ export default function SignupPage() {
   const handleGoogleSignup = () => {
     window.location.href = api.getOAuthUrl('google');
   };
+
+  if (registeredEmail) {
+    return (
+      <AuthShell eyebrow="Almost there" title="Check your email" description="">
+        <div className="space-y-4 text-center">
+          <CheckCircle2 className="w-14 h-14 text-emerald-500 mx-auto" />
+          <p className="text-slate-700 text-sm">
+            We sent a verification link to <strong>{registeredEmail}</strong>. Click the link in
+            that email to activate your account, then log in.
+          </p>
+          <p className="text-xs text-slate-500">
+            Didn&apos;t receive it? Check your spam folder or{' '}
+            <button
+              disabled={resending}
+              onClick={() => {
+                if (resending) return;
+                setResending(true);
+                api.resendVerification(registeredEmail).catch(() => null).finally(() => setResending(false));
+              }}
+              className="text-[#087d8c] hover:underline font-medium disabled:opacity-50"
+            >
+              {resending ? 'sending…' : 'resend the email'}
+            </button>
+            .
+          </p>
+          <Link
+            href="/login"
+            className="block w-full rounded-lg bg-[#0b4f5c] px-4 py-3 text-center font-semibold text-white transition hover:bg-[#083f49]"
+          >
+            Go to login
+          </Link>
+        </div>
+      </AuthShell>
+    );
+  }
 
   return (
     <AuthShell

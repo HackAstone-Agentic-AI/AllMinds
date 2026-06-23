@@ -14,6 +14,8 @@ import {
   Bell,
   Globe,
   LogOut,
+  Menu,
+  X,
 } from 'lucide-react';
 import SettingsPanel, { SettingsSection } from './SettingsPanel';
 import AgentChat from './AgentChat';
@@ -32,6 +34,7 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('profile');
   const [showNotifications, setShowNotifications] = useState(false);
   const [showLanguageMenu, setShowLanguageMenu] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const router = useRouter();
   const { language, setLanguage, t } = useLanguage();
   const { setTheme } = usePreferences();
@@ -63,6 +66,16 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
     const handleSessionExpired = () => router.replace('/login?error=session_expired');
     window.addEventListener('allminds:session-expired', handleSessionExpired);
     return () => window.removeEventListener('allminds:session-expired', handleSessionExpired);
+  }, [router]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setSidebarOpen(false); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
+
+  useEffect(() => {
+    setSidebarOpen(false);
   }, [router]);
 
   useEffect(() => {
@@ -98,7 +111,21 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
 
   return (
     <div className="app-theme-surface min-h-screen bg-slate-50 md:pl-64">
-      <aside className="fixed inset-y-0 left-0 z-50 hidden w-64 flex-col border-r border-slate-200 bg-white md:flex">
+      {/* Mobile backdrop */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/40 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      <aside
+        id="main-sidebar"
+        aria-label="Sidebar navigation"
+        className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-slate-200 bg-white transition-transform duration-300 ease-in-out
+          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}
+      >
         <button
           onClick={() => router.push('/dashboard')}
           className="flex h-20 items-center gap-3 border-b border-slate-200 px-5 text-left transition hover:bg-slate-50"
@@ -153,38 +180,50 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-100"
           >
             <Settings className="h-5 w-5" />
-            Settings
+            {t('sidebar.settings')}
           </button>
           <button
             onClick={handleLogout}
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-red-50 hover:text-red-600"
           >
             <LogOut className="h-5 w-5" />
-            Sign out
+            {t('sidebar.signOut')}
           </button>
         </div>
       </aside>
 
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white">
         <div className="flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
-          <button
-            onClick={() => router.push('/dashboard')}
-            className="flex items-center gap-2 md:hidden"
-            aria-label="Go to All Minds dashboard"
-          >
-            <Image
-              src="/allminds-logo.png"
-              alt=""
-              width={36}
-              height={36}
-              className="h-9 w-9 object-contain"
-              priority
-            />
-            <span className="text-lg font-bold text-slate-900">All Minds</span>
-          </button>
+          <div className="flex items-center gap-3">
+            {/* Hamburger — visible on mobile, hidden on desktop */}
+            <button
+              onClick={() => setSidebarOpen((open) => !open)}
+              className="rounded-lg p-2 text-slate-600 transition hover:bg-slate-100 md:hidden"
+              aria-label={sidebarOpen ? 'Close navigation menu' : 'Open navigation menu'}
+              aria-expanded={sidebarOpen}
+              aria-controls="main-sidebar"
+            >
+              {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </button>
+            <button
+              onClick={() => router.push('/dashboard')}
+              className="flex items-center gap-2 md:hidden"
+              aria-label="Go to All Minds dashboard"
+            >
+              <Image
+                src="/allminds-logo.png"
+                alt=""
+                width={36}
+                height={36}
+                className="h-9 w-9 object-contain"
+                priority
+              />
+              <span className="text-lg font-bold text-slate-900">All Minds</span>
+            </button>
+          </div>
 
           <div className="hidden md:block">
-            <p className="text-sm font-medium text-slate-500">All Minds workspace</p>
+            <p className="text-sm font-medium text-slate-500">{t('sidebar.workspace')}</p>
           </div>
 
           <div className="flex items-center gap-1 sm:gap-2">
@@ -195,8 +234,8 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
                   setShowNotifications(false);
                 }}
                 className="flex items-center gap-1 rounded-lg p-2 text-slate-600 transition hover:bg-slate-100"
-                aria-label="Change language"
-                title="Change language"
+                aria-label={t('sidebar.changeLanguage')}
+                title={t('sidebar.changeLanguage')}
               >
                 <Globe className="h-5 w-5" />
                 <span className="hidden text-xs font-medium sm:inline">
@@ -258,8 +297,8 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
                 setShowSettings(true);
               }}
               className="rounded-lg p-2 text-slate-600 transition hover:bg-slate-100 md:hidden"
-              aria-label="Settings"
-              title="Settings"
+              aria-label={t('sidebar.settings')}
+              title={t('sidebar.settings')}
             >
               <Settings className="h-5 w-5" />
             </button>

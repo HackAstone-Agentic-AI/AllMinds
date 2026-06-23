@@ -1,10 +1,8 @@
 import os
-import re
-from urllib.parse import quote_plus
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_groq import ChatGroq
 from langchain_core.messages import SystemMessage, HumanMessage
 from app.core.language import get_language_instruction
+from app.core.visual_media import build_visual_youtube_links, generate_image_aids
 
 # ─── LLM Setup ────────────────────────────────────────────────────────────────
 
@@ -17,7 +15,7 @@ def get_llm() -> ChatGoogleGenerativeAI | None:
         model="gemini-2.5-flash",
         api_key=gemini_api_key,
         temperature=0.4,
-        max_tokens=1000,
+        max_tokens=2000,
     )
 
 # ─── System Prompt ────────────────────────────────────────────────────────────
@@ -75,55 +73,15 @@ INTERACTIVE IDEA
 QUICK-MAKE TIP
 [One sentence: the single fastest visual a teacher could make right now with what's on their desk]
 
+CLASSROOM CONTEXT TIP
+[One paragraph (3–5 sentences) explaining when and why visual supports matter for this topic — give the teacher confidence and background knowledge, not just instructions]
+
 LANGUAGE RULES:
 - Maximum 15 words per instruction step
 - No jargon — if you use a term like "token economy", define it in brackets
 - Write warmly, as if advising a colleague, not writing a report
 - Never say "the child cannot" — say "the child may benefit from support with"
 - Do NOT describe generating actual images — only describe what the teacher makes"""
-
-# ─── YouTube Link Builder ─────────────────────────────────────────────────────
-
-# Keyword triggers for YouTube detection — checked against lowercased input
-YOUTUBE_TRIGGERS = frozenset([
-    "youtube", "video", "videos", "link", "links",
-    "watch", "show me", "find a video", "clip", "clips",
-])
-
-# Query templates — ordered from most specific to broadest
-YOUTUBE_QUERY_TEMPLATES = [
-    "{topic} visual support autism classroom",
-    "{topic} for neurodivergent kids learning video",
-    "{topic} early years SEND teaching resource",
-]
-
-
-def wants_youtube_links(text: str) -> bool:
-    """
-    Detects video/YouTube intent using whole-word matching to avoid
-    false positives (e.g. 'overview' matching 'video' in naive substring search).
-    """
-    lowered = text.lower()
-    return any(
-        re.search(rf"\b{re.escape(trigger)}\b", lowered)
-        for trigger in YOUTUBE_TRIGGERS
-    )
-
-
-def build_youtube_links(topic: str) -> list[dict[str, str]]:
-    """
-    Returns structured dicts instead of bare URLs so downstream agents
-    and UIs can render labelled links rather than raw query strings.
-
-    Each dict: {"label": str, "url": str}
-    """
-    links = []
-    for template in YOUTUBE_QUERY_TEMPLATES:
-        query = template.format(topic=topic)
-        url = f"https://www.youtube.com/results?search_query={quote_plus(query)}"
-        links.append({"label": query, "url": url})
-    return links
-
 
 # ─── Input Sanitization ───────────────────────────────────────────────────────
 
@@ -160,7 +118,8 @@ def visual_support_agent(state: dict) -> dict:
         {
             "output":         str,          # Structured visual support suggestions
             "topic":          str,          # Sanitized input topic (for logging/chaining)
-            "youtube_links":  list[dict],   # [{"label": str, "url": str}] or []
+            "youtube_links":  list[dict],   # Always 3 — [{"label": str, "url": str}]
+            "image_aids":     list[dict],   # 0–2 — [{"label": str, "url": str}] data URIs
             "status":         str,          # "ok" | "no_input"
         }
     """
@@ -171,6 +130,7 @@ def visual_support_agent(state: dict) -> dict:
             "output":        FALLBACK_RESPONSE,
             "topic":         "",
             "youtube_links": [],
+            "image_aids":    [],
             "status":        "no_input",
         }
 
@@ -179,9 +139,10 @@ def visual_support_agent(state: dict) -> dict:
 
     if llm is None:
         return {
-            "output": "GROQ_API_KEY is missing. Add it to your environment before running chat requests.",
+            "output": "GEMINI_API_KEY is missing. Add it to your environment before running chat requests.",
             "topic": topic,
             "youtube_links": [],
+            "image_aids":    [],
             "status": "error",
         }
 
@@ -220,14 +181,14 @@ def visual_support_agent(state: dict) -> dict:
         HumanMessage(content=user_message),
     ])
 
-    # ── YouTube Links ─────────────────────────────────────────────────────────
-    youtube_links = (
-        build_youtube_links(topic) if wants_youtube_links(user_input) else []
-    )
+    # ── YouTube links and image aids — always generated for on-topic requests ──
+    youtube_links = build_visual_youtube_links(topic)
+    image_aids    = generate_image_aids(topic, context="visual")
 
     return {
         "output":        response.content.strip(),
         "topic":         topic,
         "youtube_links": youtube_links,
+        "image_aids":    image_aids,
         "status":        "ok",
     }

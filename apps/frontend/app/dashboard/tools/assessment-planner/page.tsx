@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 interface TeacherProfileSummary {
   id: number;
@@ -44,6 +45,8 @@ function AssessmentPlannerInner() {
     topic: '',
     grade: '',
     supportNeed: '',
+    difficulty: '',
+    materialType: 'lesson_plan',
   });
   const [generatedPlan, setGeneratedPlan] = useState('');
   const [youtubeLinks, setYoutubeLinks] = useState<YoutubeLink[]>([]);
@@ -57,6 +60,8 @@ function AssessmentPlannerInner() {
   const [error, setError] = useState('');
   const router = useRouter();
   const searchParams = useSearchParams();
+
+  const { t } = useLanguage();
 
   const loadTeacherProfile = useCallback(async () => {
     const token = localStorage.getItem('allminds_token');
@@ -109,12 +114,22 @@ function AssessmentPlannerInner() {
     setImageAids([]);
 
     try {
+      const materialLabels: Record<string, string> = {
+        lesson_plan: 'Lesson Plan',
+        worksheet: 'Worksheet',
+        test: 'Test',
+        homework: 'Homework',
+      };
+      const materialLabel = materialLabels[plannerInput.materialType] ?? 'Plan';
       const supportContext = plannerInput.supportNeed
         ? `Specific support need to address: ${plannerInput.supportNeed}.`
         : '';
+      const difficultyContext = plannerInput.difficulty
+        ? `Difficulty level: ${plannerInput.difficulty}.`
+        : '';
 
       const response = await api.chatWithAgent(
-        `Create a complete Assessment and Pedagogical Plan. Grade: ${plannerInput.grade}. Subject: ${plannerInput.subject}. Topic: ${plannerInput.topic}. ${supportContext} Produce every section in full — do not truncate.`,
+        `Create a complete ${materialLabel}. Grade: ${plannerInput.grade}. Subject: ${plannerInput.subject}. Topic: ${plannerInput.topic}. ${supportContext} ${difficultyContext} Produce every section in full — do not truncate.`,
         {
           thread_id: `assessment-planner-${teacherProfile?.id ?? 'guest'}`,
           tool_hint: 'lesson',
@@ -122,13 +137,16 @@ function AssessmentPlannerInner() {
           subject: plannerInput.subject,
           topic: plannerInput.topic,
           support_need: plannerInput.supportNeed || undefined,
+          difficulty: plannerInput.difficulty || undefined,
+          material_type: plannerInput.materialType,
         },
       );
+
+      setPlanTitle(`${materialLabel} – Grade ${plannerInput.grade} ${plannerInput.subject} – ${plannerInput.topic}`);
 
       setGeneratedPlan(response.response || 'No plan was returned.');
       setYoutubeLinks(Array.isArray(response.youtube_links) ? response.youtube_links : []);
       setImageAids(Array.isArray(response.image_aids) ? response.image_aids : []);
-      setPlanTitle(`Grade ${plannerInput.grade} ${plannerInput.subject} – ${plannerInput.topic}`);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to generate the plan.');
     } finally {
@@ -377,10 +395,10 @@ function AssessmentPlannerInner() {
           </button>
           <div className="flex-1">
             <h2 className="text-3xl font-bold text-slate-800">
-              Assessment &amp; Pedagogical Planner
+              {t('planner.title')}
             </h2>
             <p className="text-slate-600 mt-1">
-              Generate a complete inclusive assessment plan with YouTube resources and AI visual aids
+              {t('planner.subtitle')}
             </p>
           </div>
         </div>
@@ -435,7 +453,31 @@ function AssessmentPlannerInner() {
 
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">Subject</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">{t('planner.materialType')}</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { value: 'lesson_plan', label: t('planner.lessonPlan') },
+                      { value: 'worksheet', label: t('planner.worksheet') },
+                      { value: 'test', label: t('planner.test') },
+                      { value: 'homework', label: t('planner.homework') },
+                    ].map((type) => (
+                      <button
+                        key={type.value}
+                        type="button"
+                        onClick={() => setPlannerInput((c) => ({ ...c, materialType: type.value }))}
+                        className={`py-2.5 px-3 rounded-lg border text-sm font-medium transition ${
+                          plannerInput.materialType === type.value
+                            ? 'border-green-500 bg-green-50 text-green-700'
+                            : 'border-slate-300 text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        {type.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">{t('planner.subject')}</label>
                   <input
                     type="text"
                     value={plannerInput.subject}
@@ -445,7 +487,7 @@ function AssessmentPlannerInner() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">Topic</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">{t('planner.topic')}</label>
                   <input
                     type="text"
                     value={plannerInput.topic}
@@ -455,7 +497,7 @@ function AssessmentPlannerInner() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">Grade</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">{t('planner.grade')}</label>
                   <input
                     type="text"
                     value={plannerInput.grade}
@@ -463,6 +505,29 @@ function AssessmentPlannerInner() {
                     className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition"
                     placeholder="e.g. 5"
                   />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">{t('planner.difficulty')}</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { value: 'Foundation', label: t('planner.foundation') },
+                      { value: 'Intermediate', label: t('planner.intermediate') },
+                      { value: 'Advanced', label: t('planner.advanced') },
+                    ].map(({ value: d, label: dLabel }) => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => setPlannerInput((c) => ({ ...c, difficulty: c.difficulty === d ? '' : d }))}
+                        className={`py-2 px-2 rounded-lg border text-xs font-medium transition ${
+                          plannerInput.difficulty === d
+                            ? 'border-green-500 bg-green-50 text-green-700'
+                            : 'border-slate-300 text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        {dLabel}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-2">
@@ -489,7 +554,12 @@ function AssessmentPlannerInner() {
                   className="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-3 px-4 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   <Sparkles className="w-5 h-5" />
-                  {isGenerating ? 'Generating plan + visual aids…' : 'Generate Plan'}
+                  {isGenerating
+                    ? 'Generating…'
+                    : `Generate ${
+                        { lesson_plan: 'Lesson Plan', worksheet: 'Worksheet', test: 'Test', homework: 'Homework' }[plannerInput.materialType] ?? 'Plan'
+                      }`
+                  }
                 </button>
               </div>
             </div>

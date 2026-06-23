@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
-import { AlertCircle, ArrowLeft, ExternalLink, Eye, MessageSquare, Send, Sparkles, User } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Download, ExternalLink, Eye, Image as ImageIcon, MessageSquare, Send, Sparkles, User } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 
@@ -17,11 +17,17 @@ interface YoutubeLink {
   url: string;
 }
 
+interface ImageAid {
+  label: string;
+  url: string;
+}
+
 interface ChatMessage {
   id: number;
   role: 'assistant' | 'user';
   content: string;
   youtubeLinks?: YoutubeLink[];
+  imageAids?: ImageAid[];
 }
 
 const starterPrompts = [
@@ -33,6 +39,7 @@ const starterPrompts = [
 export default function VisualSupportPage() {
   const [teacherProfile, setTeacherProfile] = useState<TeacherProfileSummary | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
+  const nextId = useRef(2);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 1,
@@ -75,7 +82,7 @@ export default function VisualSupportPage() {
     }
 
     const userMessage: ChatMessage = {
-      id: Date.now(),
+      id: nextId.current++,
       role: 'user',
       content: trimmed,
     };
@@ -92,10 +99,11 @@ export default function VisualSupportPage() {
       });
 
       const assistantMessage: ChatMessage = {
-        id: Date.now() + 1,
+        id: nextId.current++,
         role: 'assistant',
         content: response.response || 'No response was returned.',
         youtubeLinks: Array.isArray(response.youtube_links) ? response.youtube_links : [],
+        imageAids: Array.isArray(response.image_aids) ? response.image_aids : [],
       };
 
       setMessages((current) => [...current, assistantMessage]);
@@ -201,6 +209,30 @@ export default function VisualSupportPage() {
                             <ExternalLink className="w-3 h-3 flex-shrink-0" />
                             <span className="line-clamp-2">{link.label}</span>
                           </a>
+                        ))}
+                      </div>
+                    )}
+                    {message.imageAids && message.imageAids.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-slate-200 space-y-3">
+                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-1">
+                          <ImageIcon className="w-3 h-3" /> AI Visual Aids
+                        </p>
+                        {message.imageAids.map((img) => (
+                          <div key={img.label} className="space-y-1">
+                            <p className="text-xs text-slate-600 font-medium">{img.label}</p>
+                            <img
+                              src={img.url}
+                              alt={img.label}
+                              className="w-full rounded-lg border border-slate-200 object-contain max-h-52 bg-slate-50"
+                            />
+                            <a
+                              href={img.url}
+                              download={`${img.label.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.png`}
+                              className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
+                            >
+                              <Download className="w-3 h-3" /> Download
+                            </a>
+                          </div>
                         ))}
                       </div>
                     )}

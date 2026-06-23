@@ -1,6 +1,7 @@
 const pool = require('../config/database');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const { sendVerificationEmail } = require('./emailVerificationController');
 
 // User Registration
 const register = async (req, res) => {
@@ -68,24 +69,14 @@ const register = async (req, res) => {
 
         await client.query('COMMIT');
 
-        // Generate JWT
-        const token = jwt.sign(
-            { id: user.id, email: user.email, role: user.role },
-            process.env.JWT_SECRET,
-            { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
-        );
+        // Send verification email (non-blocking — failure logged but registration still succeeds)
+        sendVerificationEmail(user.id, user.email).catch((err) => {
+            console.error('Failed to send verification email after registration:', err);
+        });
 
         res.status(201).json({
-            message: 'User registered successfully',
-            token,
-            user: {
-                id: user.id,
-                email: user.email,
-                full_name: user.full_name,
-                role: user.role,
-                school_name: user.school_name,
-                province: user.province
-            }
+            message: 'Registration successful. Please check your email to verify your account before logging in.',
+            email: user.email,
         });
     } catch (error) {
         if (client) {
@@ -110,7 +101,7 @@ const login = async (req, res) => {
     try {
         // Find user
         const result = await pool.query(
-            'SELECT id, email, password_hash, full_name, role, school_name, province, is_active FROM users WHERE email = $1',
+            'SELECT id, email, password_hash, full_name, role, school_name, province, is_active, email_verified FROM users WHERE email = $1',
             [normalizedEmail]
         );
 
@@ -123,6 +114,15 @@ const login = async (req, res) => {
         // Check if account is active
         if (!user.is_active) {
             return res.status(401).json({ error: 'Account is deactivated. Contact admin.' });
+        }
+
+        // Block login until email is verified
+        if (!user.email_verified) {
+            return res.status(403).json({
+                error: 'email_not_verified',
+                message: 'Please verify your email address before logging in. Check your inbox for the verification link.',
+                email: user.email,
+            });
         }
 
         // Verify password

@@ -1,5 +1,16 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
 
+export class ApiError extends Error {
+  code: string;
+  status: number;
+  constructor(message: string, code: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.code = code;
+    this.status = status;
+  }
+}
+
 async function request<T = any>(endpoint: string, options?: RequestInit): Promise<T> {
   const token = localStorage.getItem('allminds_token');
   const res = await fetch(`${API_BASE}${endpoint}`, {
@@ -11,13 +22,15 @@ async function request<T = any>(endpoint: string, options?: RequestInit): Promis
     },
   });
   if (!res.ok) {
-    const error = await res.json().catch(() => ({}));
+    const body = await res.json().catch(() => ({}));
     if (res.status === 401 && typeof window !== 'undefined') {
       localStorage.removeItem('allminds_token');
       localStorage.removeItem('allminds_user');
       window.dispatchEvent(new Event('allminds:session-expired'));
     }
-    throw new Error(error.error || `API request failed (${res.status})`);
+    const code: string = body.error || `http_${res.status}`;
+    const message: string = body.message || body.error || `API request failed (${res.status})`;
+    throw new ApiError(message, code, res.status);
   }
   if (res.status === 204) {
     return undefined as T;
@@ -42,6 +55,10 @@ export const api = {
     request('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
   resetPassword: (token: string, new_password: string) =>
     request('/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, new_password }) }),
+  verifyEmail: (token: string) =>
+    request(`/auth/verify-email?token=${encodeURIComponent(token)}`),
+  resendVerification: (email: string) =>
+    request('/auth/resend-verification', { method: 'POST', body: JSON.stringify({ email }) }),
 
   // Profile
   getProfile: () => request('/profile'),

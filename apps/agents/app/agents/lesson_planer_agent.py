@@ -1,12 +1,11 @@
-import base64
 import logging
 import os
 import re
-from urllib.parse import quote_plus
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from app.core.language import get_language_instruction
+from app.core.visual_media import build_lesson_youtube_links, generate_image_aids
 
 logger = logging.getLogger(__name__)
 
@@ -46,14 +45,25 @@ OUTPUT STRUCTURE — use exactly these section headers, every time:
 
 PLAN OVERVIEW
 Subject / Topic / Grade: [as provided]
+Difficulty level: [Foundation / Intermediate / Advanced — match to grade and support needs]
 Estimated time: [specify in minutes for the full session]
 Learning focus: [one clear sentence describing what learners will understand or be able to do]
+Curriculum alignment: [key skill or concept strand this addresses]
 
 LEARNING OBJECTIVES (3–4 measurable objectives)
 • [Observable, assessable objective starting with an action verb]
 • [Observable, assessable objective]
 • [Observable, assessable objective]
 • [Optional fourth objective for breadth]
+
+LESSON ACTIVITIES & TIMELINE
+[For each activity block, specify the timing in minutes, the activity name, and a 1–2 sentence description]
+• [0–5 min]  Warm-up / Activation: [hook activity to activate prior knowledge]
+• [5–20 min] Direct Instruction: [how the teacher introduces the concept — model, demonstrate, or narrate]
+• [20–35 min] Guided Practice: [learners attempt with teacher support — specify the task]
+• [35–45 min] Independent or Group Task: [learners apply learning independently or in pairs/groups]
+• [45–50 min] Closure / Reflection: [how learning is consolidated and checked]
+Adapt timing proportionally if the session is shorter or longer than 50 minutes.
 
 ASSESSMENT DESIGN
 Main task: [clear description of what learners will produce or demonstrate]
@@ -114,10 +124,118 @@ LANGUAGE RULES:
 - Never say "the learner cannot" — say "the learner may benefit from support with"
 - Do NOT stop early. Complete every section before finishing."""
 
+WORKSHEET_SYSTEM_PROMPT = """You are an expert inclusive education designer specialising in \
+neurodivergent learners aged 5–18. Create a complete, ready-to-print worksheet a classroom \
+teacher can hand out immediately. Never truncate — produce the full worksheet.
+
+OUTPUT STRUCTURE:
+WORKSHEET TITLE
+[Clear, friendly title the learner sees]
+
+INSTRUCTIONS TO LEARNER
+[3–5 plain-language steps — one action each, max 12 words per step]
+
+SECTION 1 — WARM-UP (2–4 short recall or matching questions)
+[Questions with answer space below each]
+
+SECTION 2 — MAIN PRACTICE (6–10 questions or tasks graded easy → harder)
+[Each question numbered, with adequate answer space]
+
+SECTION 3 — CHALLENGE (2–3 higher-order questions for stretch learners)
+[Open-ended or multi-step problems]
+
+SUPPORT BOX
+[Word bank, sentence starters, or diagram the learner can refer to]
+
+TEACHER NOTES
+Differentiation: [one short paragraph — how to adapt for foundation/stretch learners]
+Answer key: [provide answers or model responses for every question]
+
+LANGUAGE RULES:
+- Learner-facing instructions: max 12 words per step
+- No jargon without an immediate definition
+- Neurodivergent-affirming framing throughout
+- Do NOT stop early. Complete all sections."""
+
+TEST_SYSTEM_PROMPT = """You are an expert inclusive assessment designer for neurodivergent \
+learners aged 5–18. Create a complete, fair test a classroom teacher can administer immediately. \
+Align question types with the topic and include accommodations. Never truncate.
+
+OUTPUT STRUCTURE:
+TEST TITLE
+Subject / Topic / Grade: [as provided]
+Total marks: [X]  |  Suggested time: [X minutes]
+
+ACCOMMODATIONS NOTE (for teacher eyes only)
+[One paragraph — extended time, read-aloud, reduced writing options, quiet workspace]
+
+SECTION A — MULTIPLE CHOICE ([X] marks)
+[4–6 questions with 4 options each; mark correct answer in teacher key]
+
+SECTION B — SHORT ANSWER ([X] marks)
+[4–6 questions; 1–3 sentences expected; mark allocation shown]
+
+SECTION C — EXTENDED RESPONSE ([X] marks)
+[1–2 questions requiring a paragraph or diagram; clear mark allocation]
+
+MARKING RUBRIC
+[Section-by-section mark allocation with brief descriptors for each mark band]
+
+TEACHER ANSWER KEY
+[Full model answers for all sections]
+
+LANGUAGE RULES:
+- Learner-facing questions: clear, unambiguous, one idea per question
+- Avoid trick questions — test understanding, not reading stamina
+- Do NOT stop early. Complete all sections."""
+
+HOMEWORK_SYSTEM_PROMPT = """You are an expert inclusive education designer. Create a \
+neurodivergent-friendly homework assignment that is engaging, achievable, and clearly \
+explained. The task should be completable independently at home in 20–30 minutes. Never truncate.
+
+OUTPUT STRUCTURE:
+HOMEWORK TITLE
+Subject / Topic / Grade: [as provided]
+Estimated time: [20–30 minutes]
+
+WHAT YOU NEED
+[List of materials — household items only; no specialist equipment]
+
+WHAT TO DO (step-by-step instructions)
+Step 1: [max 12 words]
+Step 2: [max 12 words]
+[Continue until complete — typically 4–8 steps]
+
+WHAT TO HAND IN / SHOW YOUR TEACHER
+[Exactly what the learner should bring back — be specific]
+
+SUPPORT TIPS FOR FAMILIES
+[3–5 practical bullet points for parents/carers helping at home]
+
+EXTENSION ACTIVITY (optional, for learners who finish early)
+[One additional task that deepens understanding — 2–3 sentences]
+
+TEACHER NOTES
+Differentiation: [brief notes for adapting for foundation and stretch learners]
+Marking guidance: [what a successful response looks like]
+
+LANGUAGE RULES:
+- Learner-facing steps: max 12 words each
+- Family-facing tips: warm, accessible, assume no specialist knowledge
+- Do NOT stop early. Complete all sections."""
+
+# Map material type to its prompt — lesson plan is the default
+_MATERIAL_PROMPTS: dict[str, str] = {
+    "lesson_plan": LESSON_SYSTEM_PROMPT,
+    "worksheet":   WORKSHEET_SYSTEM_PROMPT,
+    "test":        TEST_SYSTEM_PROMPT,
+    "homework":    HOMEWORK_SYSTEM_PROMPT,
+}
+
 # ─── Input Validation ─────────────────────────────────────────────────────────
 
 FALLBACK_RESPONSE = (
-    "I wasn't given enough detail to build an assessment plan. "
+    "I wasn't given enough detail to build a plan. "
     "Please provide a subject, topic, and grade level — for example: "
     "'Grade 4 Mathematics on fractions and equivalence'."
 )
@@ -144,6 +262,10 @@ def build_context_note(state: dict) -> str:
     if topic:
         notes.append(f"Topic / concept: {topic}.")
 
+    difficulty = state.get("difficulty")
+    if difficulty:
+        notes.append(f"Difficulty level requested: {difficulty} — calibrate task complexity and scaffold depth accordingly.")
+
     support_need = state.get("support_need")
     if support_need:
         notes.append(
@@ -167,101 +289,6 @@ def build_context_note(state: dict) -> str:
     return ("\n\nADDITIONAL CONTEXT:\n" + "\n".join(notes)) if notes else ""
 
 
-# ─── YouTube Link Builder ──────────────────────────────────────────────────────
-
-_YOUTUBE_TEMPLATES = [
-    "teaching {topic} {grade_ctx} inclusive classroom strategies",
-    "{topic} visual aids {subject_ctx} neurodivergent learners lesson",
-    "{grade_ctx} {subject_ctx} {topic} educational video teachers",
-]
-
-
-def build_youtube_links(topic: str, subject: str = "", grade: str = "") -> list[dict]:
-    """
-    Always generates 3 YouTube search links for the lesson topic.
-    Returns list of {"label": str, "url": str}.
-    """
-    grade_ctx = f"Grade {grade}" if grade else "primary school"
-    subject_ctx = subject if subject else "classroom"
-
-    links = []
-    for template in _YOUTUBE_TEMPLATES:
-        query = template.format(topic=topic, grade_ctx=grade_ctx, subject_ctx=subject_ctx)
-        url = f"https://www.youtube.com/results?search_query={quote_plus(query)}"
-        links.append({"label": query, "url": url})
-    return links
-
-
-# ─── Image Generation ─────────────────────────────────────────────────────────
-
-def generate_image_aids(topic: str, subject: str = "", grade: str = "") -> list[dict]:
-    """
-    Generates 1–2 educational visual aid images using Gemini's image generation model.
-    Returns list of {"label": str, "url": str} where url is a data URI.
-    Silently returns [] on any failure so a text plan is never blocked.
-    """
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        return []
-
-    grade_ctx = f"Grade {grade} " if grade else ""
-    subject_ctx = f"{subject} " if subject else ""
-
-    prompts = [
-        (
-            f"Create a simple, clear educational classroom display poster for teaching "
-            f"'{topic}' in a {grade_ctx}{subject_ctx}lesson. "
-            f"Style: bold colours (max 4), clean white background, large readable labels, "
-            f"simple diagrams or icons, no photorealism. Classroom poster format."
-        ),
-        (
-            f"Create a step-by-step visual task card for a {grade_ctx}{subject_ctx}activity "
-            f"about '{topic}'. Show numbered steps with simple icons. "
-            f"Clean white background, bold outlines, inclusive classroom style."
-        ),
-    ]
-
-    images = []
-    try:
-        from google import genai  # type: ignore[import-not-found]
-        from google.genai import types  # type: ignore[import-not-found]
-
-        client = genai.Client(api_key=api_key)
-
-        for i, prompt in enumerate(prompts):
-            try:
-                response = client.models.generate_content(
-                    model="gemini-2.0-flash-preview-image-generation",
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        response_modalities=["IMAGE"],
-                    ),
-                )
-                for part in response.candidates[0].content.parts:
-                    if hasattr(part, "inline_data") and part.inline_data:
-                        raw = part.inline_data.data
-                        img_b64 = (
-                            base64.b64encode(raw).decode("utf-8")
-                            if isinstance(raw, bytes)
-                            else raw
-                        )
-                        mime = part.inline_data.mime_type or "image/png"
-                        label = (
-                            f"Concept Diagram: {topic}"
-                            if i == 0
-                            else f"Activity Task Card: {topic}"
-                        )
-                        images.append({"label": label, "url": f"data:{mime};base64,{img_b64}"})
-                        break
-            except Exception as img_exc:
-                logger.warning("Image %d generation failed: %s", i + 1, img_exc)
-
-    except ImportError:
-        logger.info("google-genai not installed; image generation skipped")
-    except Exception as exc:
-        logger.warning("Image generation session failed: %s", exc)
-
-    return images
 
 
 # ─── Main Agent ───────────────────────────────────────────────────────────────
@@ -277,6 +304,7 @@ def lesson_planner_agent(state: dict) -> dict:
             "grade":          str,   # Optional — e.g. "5"
             "subject":        str,   # Optional — e.g. "Mathematics"
             "topic":          str,   # Optional — e.g. "Fractions and equivalence"
+            "difficulty":     str,   # Optional — "Foundation" | "Intermediate" | "Advanced"
             "support_need":   str,   # Optional — e.g. "reduced writing load, visual scaffolds"
             "profile":        str,   # Optional — e.g. "autistic, dyslexic"
             "session_length": int,   # Optional — target minutes
@@ -306,10 +334,12 @@ def lesson_planner_agent(state: dict) -> dict:
     topic_raw = sanitize_input(user_input)
 
     # Prefer explicit state fields; fall back to parsing the free-text input
-    grade   = state.get("grade", "")   or _extract_field(user_input, "grade")
-    subject = state.get("subject", "") or _extract_field(user_input, "subject")
-    topic   = state.get("topic", "")   or _extract_field(user_input, "topic") or topic_raw
+    grade         = state.get("grade", "")         or _extract_field(user_input, "grade")
+    subject       = state.get("subject", "")       or _extract_field(user_input, "subject")
+    topic         = state.get("topic", "")         or _extract_field(user_input, "topic") or topic_raw
+    material_type = (state.get("material_type") or "lesson_plan").lower().replace(" ", "_")
 
+    system_prompt = _MATERIAL_PROMPTS.get(material_type, LESSON_SYSTEM_PROMPT)
     context_note  = build_context_note(state)
     language_note = get_language_instruction(state)
     llm           = get_llm()
@@ -331,12 +361,12 @@ def lesson_planner_agent(state: dict) -> dict:
     )
 
     response = llm.invoke([
-        SystemMessage(content=LESSON_SYSTEM_PROMPT + language_note),
+        SystemMessage(content=system_prompt + language_note),
         HumanMessage(content=user_message),
     ])
 
-    youtube_links = build_youtube_links(topic, subject=subject, grade=grade)
-    image_aids    = generate_image_aids(topic, subject=subject, grade=grade)
+    youtube_links = build_lesson_youtube_links(topic, subject=subject, grade=grade)
+    image_aids    = generate_image_aids(topic, subject=subject, grade=grade, context="lesson")
 
     return {
         "output":        response.content.strip(),

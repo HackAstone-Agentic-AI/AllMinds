@@ -26,6 +26,22 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const setLanguage = useCallback((code: LanguageCode) => {
     setLanguageState(code);
     localStorage.setItem(STORAGE_KEY, code);
+
+    // Persist to backend if authenticated, so agents also receive the updated preference
+    const token = localStorage.getItem('allminds_token');
+    if (token) {
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+      fetch(`${apiBase}/profile`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ language_pref: code }),
+      }).catch(() => {
+        // Persist failure is non-fatal — local state already updated
+      });
+    }
   }, []);
 
   const t = useCallback(

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowRight, Eye, EyeOff, Lock, Mail } from 'lucide-react';
 import AuthShell from '@/components/AuthShell';
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -13,6 +13,8 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [unverifiedEmail, setUnverifiedEmail] = useState('');
+  const [resendSent, setResendSent] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -43,8 +45,12 @@ export default function LoginPage() {
       localStorage.setItem('allminds_token', data.token);
       localStorage.setItem('allminds_user', JSON.stringify(data.user));
       router.push('/dashboard');
-    } catch (err: any) {
-      setError(err.message || 'Login failed');
+    } catch (err: unknown) {
+      if (err instanceof ApiError && err.code === 'email_not_verified') {
+        setUnverifiedEmail(email);
+      } else {
+        setError(err instanceof Error ? err.message : 'Login failed');
+      }
     } finally {
       setLoading(false);
     }
@@ -67,6 +73,30 @@ export default function LoginPage() {
         >
           <span className="mt-0.5 font-bold text-red-500">!</span>
           {error}
+        </div>
+      )}
+
+      {unverifiedEmail && (
+        <div
+          role="alert"
+          className="mb-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 space-y-2"
+        >
+          <p className="font-medium">Email not verified</p>
+          <p>Please verify your email address before logging in. Check your inbox for the link.</p>
+          {!resendSent ? (
+            <button
+              onClick={() =>
+                api.resendVerification(unverifiedEmail)
+                  .then(() => setResendSent(true))
+                  .catch(() => null)
+              }
+              className="font-semibold underline hover:no-underline"
+            >
+              Resend verification email
+            </button>
+          ) : (
+            <p className="text-emerald-700 font-medium">Verification email sent — check your inbox.</p>
+          )}
         </div>
       )}
 

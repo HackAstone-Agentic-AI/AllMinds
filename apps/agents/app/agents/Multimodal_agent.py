@@ -34,7 +34,7 @@ THE FIVE LEARNING CHANNELS YOU ALWAYS ADDRESS:
 - 3–5 sentences maximum
 - One idea per sentence — no compound clauses
 - Concrete nouns over abstract concepts (say "the frog jumps" not "locomotion occurs")
-- Use the child's name placeholder [NAME] where personalisation helps
+- Refer to the learner as "the learner" or "the child" throughout — do not invent or substitute names
 - Avoid metaphors unless immediately explained
 
  VISUAL AIDS
@@ -182,7 +182,7 @@ def multimodal_agent(state: dict) -> dict:
 
     if llm is None:
         return {
-            "output": "GROQ_API_KEY is missing. Add it to your environment before running chat requests.",
+            "output": "GEMINI_API_KEY is missing. Add it to your environment before running chat requests.",
             "topic": topic,
             "status": "error",
         }
