@@ -13,10 +13,10 @@ import {
   Image as ImageIcon,
   Info,
   Lightbulb,
+  PlayCircle,
   Save,
   Sparkles,
   Trash2,
-  Youtube,
 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api';
@@ -686,7 +686,7 @@ function AssessmentPlannerInner() {
             {youtubeLinks.length > 0 && (
               <div className="bg-white rounded-xl border border-slate-200 p-5">
                 <div className="flex items-center gap-2 mb-3">
-                  <Youtube className="w-5 h-5 text-red-500" />
+                  <PlayCircle className="w-5 h-5 text-red-500" />
                   <h4 className="text-sm font-semibold text-slate-800">Video Resources</h4>
                 </div>
                 <div className="space-y-2">

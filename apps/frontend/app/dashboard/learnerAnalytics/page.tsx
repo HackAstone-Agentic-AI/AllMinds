@@ -277,7 +277,7 @@ function getProgressAnalytics(
         ? 0
         : null;
     })
-    .filter((value): value is number => value !== null);
+    .filter((value): value is 0 | 1 => value !== null);
 
   const engagementAverage = average(engagementValues);
   const taskCompletionAverage = average(taskCompletionValues);
