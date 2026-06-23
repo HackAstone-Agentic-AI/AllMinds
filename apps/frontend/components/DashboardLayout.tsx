@@ -172,35 +172,51 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
         />
       )}
 
+      {!navigationOpen && (
+        <div className="fixed left-0 top-0 z-50 flex h-16 w-16 items-center justify-center border-b border-r border-slate-200 bg-white">
+          <button
+            onClick={toggleSidebar}
+            className="rounded-lg p-2 text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+            aria-label="Open navigation menu"
+            aria-expanded="false"
+            aria-controls="main-sidebar"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+        </div>
+      )}
+
       <aside
         id="main-sidebar"
         aria-label="Sidebar navigation"
         className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-slate-200 bg-white transition-transform duration-300 ease-in-out
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} ${desktopCollapsed ? 'md:-translate-x-full' : 'md:translate-x-0'}`}
       >
-        <div className="flex h-20 items-center border-b border-slate-200 px-3">
+        <div className="flex h-16 items-center border-b border-slate-200 px-3">
           <button
             onClick={() => handleNavigate('/dashboard')}
-            className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-2 text-left transition hover:bg-slate-50"
+            className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-1.5 text-left transition hover:bg-slate-50"
             aria-label="Go to All Minds dashboard"
           >
             <Image
               src="/allminds-logo.png"
               alt=""
-              width={44}
-              height={44}
-              className="h-11 w-11 flex-none object-contain"
+              width={38}
+              height={38}
+              className="h-10 w-10 flex-none object-contain"
               priority
             />
             <div className="min-w-0">
-              <p className="truncate text-xl font-bold text-slate-900">All Minds</p>
-              <p className="truncate text-xs text-slate-500">Teacher workspace</p>
+              <p className="truncate text-lg font-bold text-slate-900">All Minds</p>
+              <p className="truncate text-[11px] text-slate-500">Teacher workspace</p>
             </div>
           </button>
           <button
-            onClick={() => setSidebarOpen(false)}
-            className="ml-1 rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 md:hidden"
+            onClick={toggleSidebar}
+            className="ml-1 rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
             aria-label="Close navigation menu"
+            aria-expanded="true"
+            aria-controls="main-sidebar"
           >
             <X className="h-5 w-5" />
           </button>
@@ -254,23 +270,12 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
       </aside>
 
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white">
-        <div className="flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
+        <div
+          className={`flex h-16 items-center justify-between pr-4 sm:pr-6 lg:pr-8 ${
+            navigationOpen ? 'pl-4 sm:pl-6 lg:pl-8' : 'pl-20'
+          }`}
+        >
           <div className="flex items-center gap-3">
-            {/* Drawer toggle on mobile, sidebar toggle on desktop. */}
-            <button
-              onClick={toggleSidebar}
-              className="rounded-lg p-2 text-slate-600 transition hover:bg-slate-100"
-              aria-label={navigationOpen ? 'Close navigation menu' : 'Open navigation menu'}
-              aria-expanded={navigationOpen}
-              aria-controls="main-sidebar"
-            >
-              <span className="md:hidden">
-                {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-              </span>
-              <span className="hidden md:block">
-                {desktopCollapsed ? <Menu className="h-5 w-5" /> : <X className="h-5 w-5" />}
-              </span>
-            </button>
             <button
               onClick={() => handleNavigate('/dashboard')}
               className={`flex items-center gap-2 ${desktopCollapsed ? '' : 'md:hidden'}`}
