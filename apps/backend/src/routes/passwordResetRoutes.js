@@ -4,7 +4,7 @@ const { forgotPassword, resetPassword } = require('../controllers/passwordResetC
 
 const router = express.Router();
 
-// 5 req / hr on forgot-password only; reset-password is protected by the one-time token
+// 5 req / hr — throttles email dispatch to prevent abuse
 const forgotPasswordLimiter = rateLimit({
     windowMs: 60 * 60 * 1000,
     max: 5,
@@ -13,7 +13,16 @@ const forgotPasswordLimiter = rateLimit({
     message: { error: 'Too many password reset requests, please try again after an hour.' },
 });
 
+// 20 req / hr — one-time token is the real protection; limiter only stops brute-force token guessing
+const resetPasswordLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    max: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many reset attempts, please try again after an hour.' },
+});
+
 router.post('/forgot-password', forgotPasswordLimiter, forgotPassword);
-router.post('/reset-password', forgotPasswordLimiter, resetPassword);
+router.post('/reset-password', resetPasswordLimiter, resetPassword);
 
 module.exports = router;

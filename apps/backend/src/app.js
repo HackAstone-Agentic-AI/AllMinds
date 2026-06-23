@@ -1,5 +1,7 @@
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const compression = require('compression');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
 require('dotenv').config({ path: path.resolve(__dirname, '../../../.env') });
@@ -27,6 +29,14 @@ const agentRoutes = require('./routes/agentRoutes');
 const calendarRoutes = require('./routes/calendarRoutes');
 
 const app = express();
+
+app.set('trust proxy', 1);
+
+app.use(helmet({
+    crossOriginEmbedderPolicy: false,
+    contentSecurityPolicy: false,
+}));
+app.use(compression());
 
 // Middleware
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || process.env.FRONTEND_URL || '')
@@ -80,10 +90,19 @@ app.get('/api/health', (req, res) => {
     });
 });
 
-// Error handling middleware
+// 404 handler
+app.use((req, res) => {
+    res.status(404).json({ error: 'Not found' });
+});
+
+// Error handler
 app.use((err, req, res, next) => {
     console.error('Unhandled error:', err);
-    res.status(500).json({ error: 'Internal server error' });
+    const isDev = process.env.NODE_ENV !== 'production';
+    res.status(err.status || 500).json({
+        error: err.message || 'Internal server error',
+        ...(isDev && { stack: err.stack }),
+    });
 });
 
 module.exports = app;

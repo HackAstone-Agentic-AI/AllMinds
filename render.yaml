@@ -115,3 +115,5 @@ services:
         value: https://allminds-backend.onrender.com/api
       - key: AGENTIC_AI_URL
         value: https://allminds-agents.onrender.com
+      - key: NEXT_PUBLIC_APP_URL
+        value: https://allminds-frontend.onrender.com

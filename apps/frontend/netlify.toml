@@ -1,6 +1,9 @@
 [build]
-command = "npx next build"
+command = "npm install && npx next build"
 publish = ".next"
+
+[build.environment]
+NODE_VERSION = "20"
 
 [[plugins]]
 package = "@netlify/plugin-nextjs"
