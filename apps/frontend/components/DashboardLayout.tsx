@@ -316,7 +316,7 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
         className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white md:hidden"
         aria-label="Mobile dashboard navigation"
       >
-        <div className="grid grid-cols-4">
+        <div className="grid grid-cols-5">
           {tabs.map((tab) => (
             <button
               key={tab.id}

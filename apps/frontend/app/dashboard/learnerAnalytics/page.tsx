@@ -301,15 +301,16 @@ function getProgressAnalytics(
   const engagementPercent = likertToPercent(engagementAverage);
   const taskCompletionPercent = likertToPercent(taskCompletionAverage);
 
-  const supportPriorityScore = Number(
-    (
-      (100 -
-        engagementPercent +
-        (100 - taskCompletionPercent) +
-        (100 - attendanceRate)) /
-      3
-    ).toFixed(1)
-  );
+  // Build support priority calculation only from available dimensions
+  const components: number[] = [];
+  if (engagementValues.length > 0) components.push(100 - engagementPercent);
+  if (taskCompletionValues.length > 0)
+    components.push(100 - taskCompletionPercent);
+  if (attendanceValues.length > 0) components.push(100 - attendanceRate);
+
+  const supportPriorityScore = components.length
+    ? Number((components.reduce((a, b) => a + b, 0) / components.length).toFixed(1))
+    : 0;
 
   return {
     engagementAverage,
