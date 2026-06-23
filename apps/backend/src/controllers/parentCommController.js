@@ -7,7 +7,8 @@ const getCommunications = async (req, res) => {
     const { learnerId } = req.query;
 
     let query = `
-        SELECT pc.*, lp.anonymous_id as learner_anonymous_id
+        SELECT pc.*, lp.anonymous_id as learner_anonymous_id,
+               lp.profile_data as learner_profile_data
         FROM parent_communications pc
         JOIN learner_profiles lp ON pc.learner_id = lp.id
         WHERE pc.teacher_id = $1

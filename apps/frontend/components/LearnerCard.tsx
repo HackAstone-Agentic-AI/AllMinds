@@ -5,6 +5,7 @@ import { LearnerProfile } from '@/types/database';
 import { User, Activity, TrendingUp, X } from 'lucide-react';
 import SensoryToolkitModal from './SensoryToolkitModal';
 import LearnerProgressModal from './LearnerProgressModal';
+import { getLearnerDisplayName, getLearnerSecondaryLabel } from '@/lib/learners';
 
 interface LearnerCardProps {
   learner: LearnerProfile;
@@ -14,6 +15,8 @@ interface LearnerCardProps {
 export default function LearnerCard({ learner, onUpdate }: LearnerCardProps) {
   const [showSensoryToolkit, setShowSensoryToolkit] = useState(false);
   const [showProgress, setShowProgress] = useState(false);
+  const learnerName = getLearnerDisplayName(learner);
+  const learnerId = getLearnerSecondaryLabel(learner);
 
   return (
     <>
@@ -24,8 +27,9 @@ export default function LearnerCard({ learner, onUpdate }: LearnerCardProps) {
           </div>
           <div className="flex-1 min-w-0">
             <h4 className="font-semibold text-slate-800 text-lg truncate">
-              {learner.anonymous_id}
+              {learnerName}
             </h4>
+            {learnerId && <p className="text-xs text-slate-500">{learnerId}</p>}
             <p className="text-sm text-slate-500">
               Added {new Date(learner.created_at).toLocaleDateString()}
             </p>

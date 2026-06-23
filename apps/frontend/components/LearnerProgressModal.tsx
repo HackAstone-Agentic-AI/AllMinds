@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { api } from '@/lib/api';
 import { LearnerProfile, LearnerProgress } from '@/types/database';
 import { X, Plus, TrendingUp } from 'lucide-react';
+import { getLearnerDisplayName, getLearnerSecondaryLabel } from '@/lib/learners';
 
 interface LearnerProgressModalProps {
   learner: LearnerProfile;
@@ -16,6 +17,8 @@ export default function LearnerProgressModal({
   onClose,
   onUpdate,
 }: LearnerProgressModalProps) {
+  const learnerName = getLearnerDisplayName(learner);
+  const learnerId = getLearnerSecondaryLabel(learner);
   const [progressRecords, setProgressRecords] = useState<LearnerProgress[]>([]);
   const [newProgress, setNewProgress] = useState({
     area: '',
@@ -86,7 +89,8 @@ export default function LearnerProgressModal({
         <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-bold text-slate-800">Learner Progress</h2>
-            <p className="text-sm text-slate-600">{learner.anonymous_id}</p>
+            <p className="text-sm text-slate-600">{learnerName}</p>
+            {learnerId && <p className="text-xs text-slate-500">{learnerId}</p>}
           </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg transition">
             <X className="w-5 h-5" />

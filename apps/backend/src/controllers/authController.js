@@ -70,13 +70,20 @@ const register = async (req, res) => {
         await client.query('COMMIT');
 
         // Send verification email (non-blocking — failure logged but registration still succeeds)
-        sendVerificationEmail(user.id, user.email).catch((err) => {
+        let verificationEmailSent = false;
+        try {
+            await sendVerificationEmail(user.id, user.email);
+            verificationEmailSent = true;
+        } catch (err) {
             console.error('Failed to send verification email after registration:', err);
-        });
+        }
 
         res.status(201).json({
-            message: 'Registration successful. Please check your email to verify your account before logging in.',
+            message: verificationEmailSent
+                ? 'Registration successful. Please check your email to verify your account before logging in.'
+                : 'Your account was created, but the verification email could not be sent. Please try resending later.',
             email: user.email,
+            verification_email_sent: verificationEmailSent,
         });
     } catch (error) {
         if (client) {
@@ -116,19 +123,19 @@ const login = async (req, res) => {
             return res.status(401).json({ error: 'Account is deactivated. Contact admin.' });
         }
 
-        // Block login until email is verified
+        // Verify password
+        const validPassword = await bcrypt.compare(password, user.password_hash);
+        if (!validPassword) {
+            return res.status(401).json({ error: 'Invalid email or password' });
+        }
+
+        // Block valid logins until email is verified.
         if (!user.email_verified) {
             return res.status(403).json({
                 error: 'email_not_verified',
                 message: 'Please verify your email address before logging in. Check your inbox for the verification link.',
                 email: user.email,
             });
-        }
-
-        // Verify password
-        const validPassword = await bcrypt.compare(password, user.password_hash);
-        if (!validPassword) {
-            return res.status(401).json({ error: 'Invalid email or password' });
         }
 
         // Generate JWT

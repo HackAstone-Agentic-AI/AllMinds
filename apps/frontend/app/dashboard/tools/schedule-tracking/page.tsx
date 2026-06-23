@@ -6,6 +6,7 @@ import { LearnerProfile, LearnerScheduleItem } from '@/types/database';
 import { AlertCircle, ArrowLeft, Calendar, Clock3, Plus, Trash2, Users } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
+import { getLearnerDisplayName } from '@/lib/learners';
 
 const mapLearnerRow = (learner: LearnerProfile) => ({
   ...learner,
@@ -174,7 +175,7 @@ export default function ScheduleTrackingPage() {
                 >
                   {learnerProfiles.map((learner) => (
                     <option key={learner.id} value={learner.id}>
-                      {learner.anonymous_id}
+                      {getLearnerDisplayName(learner)}
                     </option>
                   ))}
                 </select>
@@ -182,7 +183,7 @@ export default function ScheduleTrackingPage() {
                 {selectedLearner && (
                   <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
                     <p className="text-sm text-purple-900 font-medium">
-                      Active learner: {selectedLearner.anonymous_id}
+                      Active learner: {getLearnerDisplayName(selectedLearner)}
                     </p>
                     <p className="text-xs text-purple-700 mt-1">
                       Use this planner to keep transitions predictable and visible.

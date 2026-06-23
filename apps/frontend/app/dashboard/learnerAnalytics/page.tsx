@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import { api } from '@/lib/api';
+import { getLearnerDisplayName } from '@/lib/learners';
 import {
   BarChart3,
   Brain,
@@ -121,18 +122,16 @@ function likertToPercent(value: number) {
 
 function mapLearnerRow(row: LearnerProfileRow): LearnerProfile {
   const profile = row.profile_data ?? {};
+  const displayName = getLearnerDisplayName({
+    anonymous_id: row.anonymous_id,
+    profile_data: profile,
+  });
 
   return {
     id: String(row.id),
     anonymousId: row.anonymous_id,
-    pseudonym:
-      profile.pseudonym ||
-      profile.fullName ||
-      profile.full_name ||
-      profile.name ||
-      row.anonymous_id,
-    fullName:
-      profile.fullName || profile.full_name || profile.name || row.anonymous_id,
+    pseudonym: displayName,
+    fullName: displayName,
     grade:
       profile.grade ||
       profile.gradeLevel ||

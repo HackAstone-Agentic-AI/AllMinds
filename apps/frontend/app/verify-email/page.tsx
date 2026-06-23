@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, Suspense } from 'react';
+import { useEffect, useRef, useState, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { CheckCircle2, AlertCircle, Loader2, Mail } from 'lucide-react';
@@ -11,11 +11,11 @@ function VerifyEmailInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [status, setStatus] = useState<Status>('verifying');
-  const [resendEmail, setResendEmail] = useState('');
   const [resendInput, setResendInput] = useState('');
   const [resendSent, setResendSent] = useState(false);
   const [resendError, setResendError] = useState('');
   const [resending, setResending] = useState(false);
+  const verifiedToken = useRef('');
 
   useEffect(() => {
     const token = searchParams.get('token');
@@ -23,6 +23,8 @@ function VerifyEmailInner() {
       setStatus('invalid');
       return;
     }
+    if (verifiedToken.current === token) return;
+    verifiedToken.current = token;
 
     api.verifyEmail(token)
       .then(() => setStatus('success'))
@@ -35,7 +37,7 @@ function VerifyEmailInner() {
   }, [searchParams]);
 
   const handleResend = async () => {
-    const email = resendInput.trim() || resendEmail.trim();
+    const email = resendInput.trim();
     if (!email) {
       setResendError('Please enter your email address.');
       return;
@@ -98,7 +100,7 @@ function VerifyEmailInner() {
                   </label>
                   <input
                     type="email"
-                    value={resendInput || resendEmail}
+                    value={resendInput}
                     onChange={(e) => setResendInput(e.target.value)}
                     placeholder="you@example.com"
                     className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#0b4f5c] focus:border-transparent outline-none transition text-sm"

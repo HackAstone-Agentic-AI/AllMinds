@@ -7,6 +7,7 @@ import { LearnerProfile, ParentCommunication } from '@/types/database';
 import { ArrowLeft, Mail, Download, FileText } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
+import { getLearnerDisplayName } from '@/lib/learners';
 
 export default function ParentCommunicationPage() {
   const [learners, setLearners] = useState<LearnerProfile[]>([]);
@@ -40,7 +41,7 @@ export default function ParentCommunicationPage() {
     if (!selectedLearner) return;
 
     const learner = learners.find((l) => String(l.id) === selectedLearner);
-    const rawId = learner?.anonymous_id ?? `Learner ${selectedLearner}`;
+    const rawId = learner ? getLearnerDisplayName(learner) : `Learner ${selectedLearner}`;
     const learnerLabel = rawId.replace(/[^a-zA-Z0-9 \-_]/g, '').trim().slice(0, 40) || `Learner ${selectedLearner}`;
     const typeLabel = letterType === 'progress' ? 'progress report' : 'concern letter';
 
@@ -101,7 +102,10 @@ export default function ParentCommunicationPage() {
   };
 
   const buildLetterMarkup = (comm: ParentCommunication) => {
-    const learnerId = comm.learner_anonymous_id || `Learner ${comm.learner_id}`;
+    const learnerId = getLearnerDisplayName({
+      anonymous_id: comm.learner_anonymous_id || `Learner ${comm.learner_id}`,
+      profile_data: comm.learner_profile_data || {},
+    });
     return `
       <html>
         <head>
@@ -125,7 +129,10 @@ export default function ParentCommunicationPage() {
   };
 
   const downloadLetter = (comm: ParentCommunication, format: 'doc' | 'txt') => {
-    const learnerId = comm.learner_anonymous_id || `learner_${comm.learner_id}`;
+    const learnerId = getLearnerDisplayName({
+      anonymous_id: comm.learner_anonymous_id || `learner_${comm.learner_id}`,
+      profile_data: comm.learner_profile_data || {},
+    });
     const blob =
       format === 'doc'
         ? new Blob([buildLetterMarkup(comm)], { type: 'application/msword' })
@@ -140,7 +147,10 @@ export default function ParentCommunicationPage() {
   };
 
   const downloadPdfLetter = (comm: ParentCommunication) => {
-    const learnerId = comm.learner_anonymous_id || `Learner ${comm.learner_id}`;
+    const learnerId = getLearnerDisplayName({
+      anonymous_id: comm.learner_anonymous_id || `Learner ${comm.learner_id}`,
+      profile_data: comm.learner_profile_data || {},
+    });
     const pdf = new jsPDF({
       orientation: 'portrait',
       unit: 'pt',
@@ -215,7 +225,7 @@ export default function ParentCommunicationPage() {
                   <option value="">Choose a learner</option>
                   {learners.map((learner) => (
                     <option key={learner.id} value={learner.id}>
-                      {learner.anonymous_id}
+                      {getLearnerDisplayName(learner)}
                     </option>
                   ))}
                 </select>
@@ -312,7 +322,10 @@ export default function ParentCommunicationPage() {
                     <div className="flex items-start justify-between mb-2">
                       <div>
                         <h4 className="font-medium text-slate-800">
-                          {comm.learner_anonymous_id || 'Unknown Learner'}
+                          {getLearnerDisplayName({
+                            anonymous_id: comm.learner_anonymous_id || 'Unknown Learner',
+                            profile_data: comm.learner_profile_data || {},
+                          })}
                         </h4>
                         <span
                           className={`inline-block mt-1 px-2 py-1 rounded text-xs font-medium ${

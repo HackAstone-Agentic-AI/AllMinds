@@ -15,6 +15,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [unverifiedEmail, setUnverifiedEmail] = useState('');
   const [resendSent, setResendSent] = useState(false);
+  const [resendError, setResendError] = useState('');
   const router = useRouter();
 
   useEffect(() => {
@@ -88,7 +89,11 @@ export default function LoginPage() {
               onClick={() =>
                 api.resendVerification(unverifiedEmail)
                   .then(() => setResendSent(true))
-                  .catch(() => null)
+                  .catch((err: unknown) =>
+                    setResendError(
+                      err instanceof Error ? err.message : 'Could not resend the email.',
+                    ),
+                  )
               }
               className="font-semibold underline hover:no-underline"
             >
@@ -97,6 +102,7 @@ export default function LoginPage() {
           ) : (
             <p className="text-emerald-700 font-medium">Verification email sent — check your inbox.</p>
           )}
+          {resendError && <p className="text-red-700">{resendError}</p>}
         </div>
       )}
 

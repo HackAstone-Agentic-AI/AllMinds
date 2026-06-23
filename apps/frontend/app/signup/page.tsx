@@ -19,7 +19,9 @@ export default function SignupPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [registeredEmail, setRegisteredEmail] = useState('');
+  const [verificationEmailSent, setVerificationEmailSent] = useState(true);
   const [resending, setResending] = useState(false);
+  const [resendMessage, setResendMessage] = useState('');
   const router = useRouter();
 
   const handleChange = (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -42,7 +44,7 @@ export default function SignupPage() {
     setLoading(true);
     try {
       const fullName = `${formData.title} ${formData.name} ${formData.surname}`.trim();
-      await api.register({
+      const result = await api.register({
         email: formData.email,
         password: formData.password,
         full_name: fullName,
@@ -54,6 +56,7 @@ export default function SignupPage() {
         city: '',
       });
       setRegisteredEmail(formData.email);
+      setVerificationEmailSent(result.verification_email_sent !== false);
     } catch (err: any) {
       setError(err.message || 'Registration failed');
     } finally {
@@ -69,10 +72,23 @@ export default function SignupPage() {
     return (
       <AuthShell eyebrow="Almost there" title="Check your email" description="">
         <div className="space-y-4 text-center">
-          <CheckCircle2 className="w-14 h-14 text-emerald-500 mx-auto" />
+          <CheckCircle2
+            className={`w-14 h-14 mx-auto ${
+              verificationEmailSent ? 'text-emerald-500' : 'text-amber-500'
+            }`}
+          />
           <p className="text-slate-700 text-sm">
-            We sent a verification link to <strong>{registeredEmail}</strong>. Click the link in
-            that email to activate your account, then log in.
+            {verificationEmailSent ? (
+              <>
+                We sent a verification link to <strong>{registeredEmail}</strong>. Click the link
+                in that email to activate your account, then log in.
+              </>
+            ) : (
+              <>
+                Your account was created, but we could not send a verification email to{' '}
+                <strong>{registeredEmail}</strong>. Try resending once email delivery is available.
+              </>
+            )}
           </p>
           <p className="text-xs text-slate-500">
             Didn&apos;t receive it? Check your spam folder or{' '}
@@ -81,7 +97,15 @@ export default function SignupPage() {
               onClick={() => {
                 if (resending) return;
                 setResending(true);
-                api.resendVerification(registeredEmail).catch(() => null).finally(() => setResending(false));
+                setResendMessage('');
+                api.resendVerification(registeredEmail)
+                  .then(() => setResendMessage('A new verification email was sent.'))
+                  .catch((err: unknown) =>
+                    setResendMessage(
+                      err instanceof Error ? err.message : 'Could not resend the email.',
+                    ),
+                  )
+                  .finally(() => setResending(false));
               }}
               className="text-[#087d8c] hover:underline font-medium disabled:opacity-50"
             >
@@ -89,6 +113,7 @@ export default function SignupPage() {
             </button>
             .
           </p>
+          {resendMessage && <p className="text-xs text-slate-600">{resendMessage}</p>}
           <Link
             href="/login"
             className="block w-full rounded-lg bg-[#0b4f5c] px-4 py-3 text-center font-semibold text-white transition hover:bg-[#083f49]"

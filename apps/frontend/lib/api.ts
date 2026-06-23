@@ -58,7 +58,10 @@ export const api = {
   resetPassword: (token: string, new_password: string) =>
     request('/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, new_password }) }),
   verifyEmail: (token: string) =>
-    request(`/auth/verify-email?token=${encodeURIComponent(token)}`),
+    request('/auth/verify-email', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    }),
   resendVerification: (email: string) =>
     request('/auth/resend-verification', { method: 'POST', body: JSON.stringify({ email }) }),
 
