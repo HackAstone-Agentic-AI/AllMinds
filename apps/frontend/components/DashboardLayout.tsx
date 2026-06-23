@@ -10,6 +10,7 @@ import {
   Wrench,
   Users,
   GraduationCap,
+  BarChart3,
   Settings,
   Bell,
   Globe,
@@ -100,6 +101,7 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
   const tabs = [
     { id: 'home', label: t('nav.home'), icon: Home, href: '/dashboard' },
     { id: 'tools', label: t('nav.tools'), icon: Wrench, href: '/dashboard/tools' },
+    { id: 'learner-analytics', label: t('nav.learnerAnalytics'), icon: BarChart3, href: '/dashboard/learnerAnalytics' },
     { id: 'community', label: t('nav.community'), icon: Users, href: '/dashboard/community' },
     {
       id: 'professional-development',

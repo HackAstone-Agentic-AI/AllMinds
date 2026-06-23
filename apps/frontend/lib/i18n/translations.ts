@@ -31,6 +31,7 @@ export type TranslationKey =
   | 'nav.tools'
   | 'nav.community'
   | 'nav.professionalDevelopment'
+  | 'nav.learnerAnalytics'
   // Notifications
   | 'notifications.title'
   | 'notifications.empty'
@@ -98,6 +99,7 @@ const en: TranslationMap = {
   'nav.tools': 'Tools',
   'nav.community': 'Community',
   'nav.professionalDevelopment': 'Professional Development',
+  'nav.learnerAnalytics': 'Learner Analytics',
   'notifications.title': 'Notifications',
   'notifications.empty': 'No new notifications',
   'sidebar.settings': 'Settings',
@@ -156,6 +158,7 @@ const af: Partial<TranslationMap> = {
   'nav.tools': 'Gereedskap',
   'nav.community': 'Gemeenskap',
   'nav.professionalDevelopment': 'Professionele Ontwikkeling',
+  'nav.learnerAnalytics': 'Leerderanalise',
   'notifications.title': 'Kennisgewings',
   'notifications.empty': 'Geen nuwe kennisgewings',
   'sidebar.settings': 'Instellings',
@@ -192,6 +195,7 @@ const zu: Partial<TranslationMap> = {
   'nav.tools': 'Amathuluzi',
   'nav.community': 'Umphakathi',
   'nav.professionalDevelopment': 'Ukuthuthukiswa Komsebenzi',
+  'nav.learnerAnalytics': 'Ukuhlaziya Abafundi',
   'notifications.title': 'Izaziso',
   'notifications.empty': 'Azikho izaziso ezintsha',
   'sidebar.settings': 'Izilungiselelo',
@@ -212,6 +216,7 @@ const xh: Partial<TranslationMap> = {
   'nav.tools': 'Izixhobo',
   'nav.community': 'Uluntu',
   'nav.professionalDevelopment': 'Uphuhliso Lomsebenzi',
+  'nav.learnerAnalytics': 'Uhlalutyo Lwabafundi',
   'notifications.title': 'Izaziso',
   'notifications.empty': 'Akukho zaziso zintsha',
   'sidebar.settings': 'Iisetingi',
