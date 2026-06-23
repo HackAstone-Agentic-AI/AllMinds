@@ -109,6 +109,8 @@ def _validate_output(text: str) -> bool:
 
 def _build_media_diagnostics(yt_diag: str, img_diag: str) -> list[str]:
     messages = []
+    if "blocked" in (yt_diag, img_diag):
+        return ["Video and image suggestions were skipped — this topic is outside the assistant's supported scope."]
     if yt_diag not in ("api_ok", "search_fallback"):
         messages.append(f"YouTube search unavailable ({yt_diag}) — showing search-page links instead.")
     elif yt_diag == "search_fallback":

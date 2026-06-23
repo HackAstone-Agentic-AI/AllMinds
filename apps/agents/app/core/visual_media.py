@@ -18,6 +18,7 @@ from urllib.request import urlopen
 from urllib.error import HTTPError, URLError
 
 from app.core.models import IMAGE_MODEL
+from app.core.guardrails import is_topic_safe
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +102,9 @@ def build_lesson_youtube_links(
     topic: str, subject: str = "", grade: str = ""
 ) -> tuple[list[dict], str]:
     """Returns (links, diagnostic)."""
+    if not is_topic_safe(topic):
+        logger.warning("Blocked unsafe/out-of-scope topic from YouTube search")
+        return [], "blocked"
     grade_ctx = f"Grade {grade}" if grade else "primary school"
     subject_ctx = subject if subject else "classroom"
     queries = [
@@ -116,6 +120,9 @@ def build_lesson_youtube_links(
 
 def build_visual_youtube_links(topic: str) -> tuple[list[dict], str]:
     """Returns (links, diagnostic)."""
+    if not is_topic_safe(topic):
+        logger.warning("Blocked unsafe/out-of-scope topic from YouTube search")
+        return [], "blocked"
     queries = [t.format(topic=topic) for t in _VISUAL_YOUTUBE_TEMPLATES]
     videos, diag = _youtube_api_search(queries)
     if videos:
@@ -250,6 +257,10 @@ def generate_image_aids(
     Returns (images, diagnostic). Never raises — text output is never blocked.
     """
     global _working_image_model
+
+    if not is_topic_safe(topic):
+        logger.warning("Blocked unsafe/out-of-scope topic from image generation")
+        return [], "blocked"
 
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
     if not api_key:

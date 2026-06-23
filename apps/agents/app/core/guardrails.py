@@ -78,6 +78,8 @@ _HARM_PATTERNS = [
     r"\bweapon (instructions|how to make|build)\b",
     r"\bbomb (instructions|how to make|build)\b",
     r"\bdrug (synthesis|how to make|manufacture)\b",
+    # Catch "how to make/build/… a bomb/weapon/poison/…" (object-after-verb phrasing)
+    r"\bhow to (make|build|create|assemble|synthesi[sz]e|manufacture)\b.{0,30}\b(bomb|explosive|weapon|gun|firearm|poison|drug|malware|virus|ransomware)\b",
 ]
 
 _HARM_RE = re.compile(
@@ -111,6 +113,22 @@ def _is_offtopic_abuse(text: str) -> bool:
     return bool(_OFFTOPIC_RE.search(text))
 
 
+# ── Topic safety gate (for media: YouTube search & image generation) ──────────
+
+def is_topic_safe(text: str) -> bool:
+    """
+    Defence-in-depth gate for the media paths. Returns True only when a topic is safe
+    to turn into a web (YouTube) search query or an image-generation prompt.
+
+    Reuses the same injection / harmful / off-topic-abuse detection as check_input, so
+    an unsafe or out-of-scope topic is never sent to an external search or image model
+    even if it somehow reaches these helpers without going through check_input first.
+    """
+    if not text or not text.strip():
+        return False
+    return not (_is_injection(text) or _is_harmful(text) or _is_offtopic_abuse(text))
+
+
 # ── Output sanitisation ───────────────────────────────────────────────────────
 
 _OUTPUT_SENSITIVE_RE = re.compile(
@@ -119,6 +137,27 @@ _OUTPUT_SENSITIVE_RE = re.compile(
     r"|sk-[A-Za-z0-9]{20,}",
     re.IGNORECASE,
 )
+
+# Harmful CONTENT / INSTRUCTIONS that must never be displayed, even if a model produces
+# them. Deliberately narrow and instruction-focused — it must NOT trip on legitimate
+# safeguarding language (e.g. advising a teacher on signs of self-harm is allowed).
+_OUTPUT_HARM_PATTERNS = [
+    r"\bhow to (make|build|create|synthesize|manufacture|assemble)\b.{0,40}\b(bomb|explosive|weapon|gun|poison|malware|virus|ransomware|drug)\b",
+    r"\bstep[- ]by[- ]step\b.{0,40}\b(bomb|explosive|weapon|poison|malware|ransomware|hack(ing)?)\b",
+    r"\b(csam|child sexual abuse material)\b",
+    r"\bsexual(ly)? (abuse|exploit|assault)(ing)? (a )?(child|minor|kid)\b",
+    r"\b(pornograph\w+|explicit sexual|erotic) (story|content|scene|description)\b",
+]
+_OUTPUT_HARM_RE = re.compile("|".join(_OUTPUT_HARM_PATTERNS), re.IGNORECASE)
+
+SAFE_REFUSAL_MESSAGE = (
+    "I'm sorry, but I can't help with that. This assistant is here to support teachers "
+    "working with neurodivergent learners — please ask me something within that scope."
+)
+
+
+def _is_harmful_output(text: str) -> bool:
+    return bool(_OUTPUT_HARM_RE.search(text))
 
 
 def sanitize_output(text: str) -> str:
@@ -173,8 +212,11 @@ def check_input(text: str) -> GuardrailResult:
 def check_output(text: str) -> str:
     """
     Sanitise agent output before returning it to the caller.
+    Blocks harmful content outright, redacts secrets, and truncates over-long output.
     Never raises — always returns a string.
     """
     if not text:
         return ""
+    if _is_harmful_output(text):
+        return SAFE_REFUSAL_MESSAGE
     return sanitize_output(text)
