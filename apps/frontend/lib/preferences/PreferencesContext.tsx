@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 export type ThemePreference = 'light' | 'dark' | 'auto';
 export type TextScale = 'compact' | 'comfortable' | 'large';
@@ -14,6 +14,7 @@ interface Preferences {
 }
 
 interface PreferencesContextValue extends Preferences {
+  applyServerThemePreference: (theme: ThemePreference) => void;
   setTheme: (theme: ThemePreference) => void;
   setTextScale: (scale: TextScale) => void;
   setHighContrast: (enabled: boolean) => void;
@@ -34,6 +35,44 @@ const defaults: Preferences = {
 
 const PreferencesContext = createContext<PreferencesContextValue | null>(null);
 
+function isThemePreference(value: unknown): value is ThemePreference {
+  return value === 'light' || value === 'dark' || value === 'auto';
+}
+
+function isTextScale(value: unknown): value is TextScale {
+  return value === 'compact' || value === 'comfortable' || value === 'large';
+}
+
+function readStoredPreferences(): Preferences | null {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const stored = window.localStorage.getItem(STORAGE_KEY);
+    if (!stored) return null;
+
+    const parsed = JSON.parse(stored) as Partial<Preferences>;
+    return {
+      theme: isThemePreference(parsed.theme) ? parsed.theme : defaults.theme,
+      textScale: isTextScale(parsed.textScale) ? parsed.textScale : defaults.textScale,
+      highContrast:
+        typeof parsed.highContrast === 'boolean'
+          ? parsed.highContrast
+          : defaults.highContrast,
+      reducedMotion:
+        typeof parsed.reducedMotion === 'boolean'
+          ? parsed.reducedMotion
+          : defaults.reducedMotion,
+      readableFont:
+        typeof parsed.readableFont === 'boolean'
+          ? parsed.readableFont
+          : defaults.readableFont,
+    };
+  } catch {
+    window.localStorage.removeItem(STORAGE_KEY);
+    return null;
+  }
+}
+
 function applyPreferences(preferences: Preferences) {
   const root = document.documentElement;
   const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -50,18 +89,20 @@ function applyPreferences(preferences: Preferences) {
 }
 
 export function PreferencesProvider({ children }: { children: React.ReactNode }) {
-  const [preferences, setPreferences] = useState<Preferences>(defaults);
+  const [initialHadStoredPreferences] = useState(() => readStoredPreferences() !== null);
+  const serverThemeApplied = useRef(false);
+  const [preferences, setPreferences] = useState<Preferences>(
+    () => readStoredPreferences() ?? defaults,
+  );
 
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        setPreferences({ ...defaults, ...JSON.parse(stored) });
-      }
-    } catch {
-      localStorage.removeItem(STORAGE_KEY);
-    }
-  }, []);
+  const applyServerThemePreference = useCallback(
+    (theme: ThemePreference) => {
+      if (initialHadStoredPreferences || serverThemeApplied.current) return;
+      serverThemeApplied.current = true;
+      setPreferences((current) => ({ ...current, theme }));
+    },
+    [initialHadStoredPreferences],
+  );
 
   useEffect(() => {
     applyPreferences(preferences);
@@ -77,6 +118,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const value = useMemo<PreferencesContextValue>(
     () => ({
       ...preferences,
+      applyServerThemePreference,
       setTheme: (theme) => setPreferences((current) => ({ ...current, theme })),
       setTextScale: (textScale) =>
         setPreferences((current) => ({ ...current, textScale })),
@@ -88,7 +130,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         setPreferences((current) => ({ ...current, readableFont })),
       resetPreferences: () => setPreferences(defaults),
     }),
-    [preferences],
+    [applyServerThemePreference, preferences],
   );
 
   return <PreferencesContext.Provider value={value}>{children}</PreferencesContext.Provider>;

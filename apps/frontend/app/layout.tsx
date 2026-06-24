@@ -36,6 +36,32 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function () {
+                try {
+                  var raw = window.localStorage.getItem('allminds_preferences');
+                  var preferences = raw ? JSON.parse(raw) : {};
+                  var theme = preferences.theme || 'light';
+                  var resolvedTheme = theme === 'auto'
+                    ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+                    : theme;
+
+                  document.documentElement.dataset.theme = resolvedTheme;
+                  document.documentElement.dataset.themePreference = theme;
+                  document.documentElement.dataset.textScale = preferences.textScale || 'comfortable';
+                  document.documentElement.dataset.contrast = preferences.highContrast ? 'high' : 'standard';
+                  document.documentElement.dataset.motion = preferences.reducedMotion ? 'reduced' : 'full';
+                  document.documentElement.dataset.readableFont = preferences.readableFont ? 'true' : 'false';
+                  document.documentElement.style.colorScheme = resolvedTheme;
+                } catch (error) {}
+              })();
+            `,
+          }}
+        />
+      </head>
       <body>
         <PreferencesProvider>
           <LanguageProvider>{children}</LanguageProvider>

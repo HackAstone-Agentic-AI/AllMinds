@@ -40,7 +40,7 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
   const [isDesktop, setIsDesktop] = useState(false);
   const router = useRouter();
   const { language, setLanguage, t } = useLanguage();
-  const { setTheme } = usePreferences();
+  const { applyServerThemePreference } = usePreferences();
 
   const loadProfile = useCallback(async () => {
     const token = localStorage.getItem('allminds_token');
@@ -53,13 +53,13 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
       const data = await api.getProfile();
       setProfile(data);
       if (['light', 'dark', 'auto'].includes(data.theme_preference)) {
-        setTheme(data.theme_preference as ThemePreference);
+        applyServerThemePreference(data.theme_preference as ThemePreference);
       }
     } catch (err) {
       console.error(err);
       router.push('/login');
     }
-  }, [router, setTheme]);
+  }, [applyServerThemePreference, router]);
 
   useEffect(() => {
     void loadProfile();
