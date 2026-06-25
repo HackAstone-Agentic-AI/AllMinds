@@ -1,8 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { api } from '@/lib/api';
 import Link from 'next/link';
+import { ArrowRight, Mail } from 'lucide-react';
+import AuthShell from '@/components/AuthShell';
+import { api } from '@/lib/api';
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
@@ -10,72 +12,86 @@ export default function ForgotPasswordPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleResetPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleResetPassword = async (event: React.FormEvent) => {
+    event.preventDefault();
     setError('');
     setMessage('');
-    setLoading(true);
 
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      setError('Enter the email address for your account.');
+      return;
+    }
+
+    setLoading(true);
     try {
-      const result = await api.forgotPassword(email);
-      setMessage(result.message || 'Password reset instructions sent to your email.');
-    } catch (err: any) {
-      setError(err.message || 'Failed to send reset email');
+      const result = await api.forgotPassword(trimmedEmail);
+      setMessage(result.message || 'If that email is registered, you will receive a reset link.');
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : 'Could not send reset instructions. Please try again.',
+      );
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-slate-100">
-      <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-slate-800 mb-2">Forgot Password</h1>
-          <p className="text-slate-600">Enter your email to reset your password</p>
+    <AuthShell
+      eyebrow="Account recovery"
+      title="Reset your password"
+      description="Enter your account email and we will send a secure reset link if the account exists."
+    >
+      {(error || message) && (
+        <div
+          role="alert"
+          className={`mb-5 rounded-lg border px-4 py-3 text-sm ${
+            error
+              ? 'border-red-200 bg-red-50 text-red-700'
+              : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+          }`}
+        >
+          {error || message}
         </div>
+      )}
 
-        <form onSubmit={handleResetPassword} className="space-y-4">
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
-              {error}
-            </div>
-          )}
-          {message && (
-            <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm">
-              {message}
-            </div>
-          )}
-
-          <div>
-            <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-2">
-              Email Address
-            </label>
+      <form onSubmit={handleResetPassword} className="space-y-4">
+        <div>
+          <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-slate-700">
+            Email address
+          </label>
+          <div className="relative">
+            <Mail className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
               type="email"
               id="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
-              placeholder="Enter your email"
+              onChange={(event) => setEmail(event.target.value)}
+              autoComplete="email"
+              className="w-full rounded-lg border border-slate-300 bg-white py-3 pl-10 pr-4 text-sm outline-none transition focus:border-[#087d8c] focus:ring-2 focus:ring-[#087d8c]/20"
+              placeholder="teacher@example.com"
               required
             />
           </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-lg transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading ? 'Sending...' : 'Send Reset Instructions'}
-          </button>
-        </form>
-
-        <div className="mt-6 text-center">
-          <Link href="/login" className="text-sm text-blue-600 hover:text-blue-700 transition">
-            Back to Sign In
-          </Link>
         </div>
-      </div>
-    </div>
+
+        <button
+          type="submit"
+          disabled={loading}
+          className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#0b4f5c] px-4 py-3 font-semibold text-white transition hover:bg-[#083f49] disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {loading ? 'Sending...' : 'Send reset link'}
+          {!loading && <ArrowRight className="h-4 w-4" />}
+        </button>
+      </form>
+
+      <p className="mt-6 text-center text-sm text-slate-600">
+        <Link href="/login" className="font-semibold text-[#087d8c] hover:text-[#075f6a]">
+          Back to sign in
+        </Link>
+      </p>
+    </AuthShell>
   );
 }
