@@ -9,6 +9,7 @@ import { api } from '@/lib/api';
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
   const [message, setMessage] = useState('');
+  const [resetLink, setResetLink] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -16,6 +17,7 @@ export default function ForgotPasswordPage() {
     event.preventDefault();
     setError('');
     setMessage('');
+    setResetLink('');
 
     const trimmedEmail = email.trim();
     if (!trimmedEmail) {
@@ -27,6 +29,9 @@ export default function ForgotPasswordPage() {
     try {
       const result = await api.forgotPassword(trimmedEmail);
       setMessage(result.message || 'If that email is registered, you will receive a reset link.');
+      if (result.reset_link) {
+        setResetLink(result.reset_link);
+      }
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -54,6 +59,16 @@ export default function ForgotPasswordPage() {
           }`}
         >
           {error || message}
+        </div>
+      )}
+
+      {resetLink && (
+        <div className="mb-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <p className="font-medium">Email isn&apos;t set up on this server.</p>
+          <p className="mt-1">Use this link to reset your password:</p>
+          <Link href={resetLink} className="mt-2 block break-all font-semibold text-[#087d8c] underline">
+            {resetLink}
+          </Link>
         </div>
       )}
 

@@ -2,11 +2,18 @@ const pool = require('../config/database');
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const { sendEmail } = require('../config/email');
+const { isPlaceholder } = require('../config/env');
 
 const RESET_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 const hashToken = (token) =>
     crypto.createHash('sha256').update(token).digest('hex');
+
+// SMTP is considered usable only when host/user/pass are all real (not placeholders).
+const isEmailConfigured = () =>
+    !isPlaceholder(process.env.EMAIL_HOST) &&
+    !isPlaceholder(process.env.EMAIL_USER) &&
+    !isPlaceholder(process.env.EMAIL_PASS);
 
 const buildPasswordResetEmail = (resetLink) => `
     <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto">
@@ -59,6 +66,23 @@ const forgotPassword = async (req, res) => {
         );
 
         const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
+
+        // Dev fallback: when SMTP isn't configured the email can never be delivered,
+        // so rather than failing the flow we keep the token and return the reset link
+        // directly. The link is only exposed outside production.
+        if (!isEmailConfigured()) {
+            console.warn('[password-reset] SMTP not configured — returning reset link in the response (dev mode).');
+            await pool.query(
+                'DELETE FROM password_reset_tokens WHERE user_id = $1 AND token <> $2',
+                [user.id, tokenHash],
+            );
+            return res.json({
+                message: 'Email delivery is not set up on this server. Use the reset link below to continue.',
+                reset_email_sent: false,
+                ...(process.env.NODE_ENV !== 'production' ? { reset_link: resetLink } : {}),
+            });
+        }
+
         const sent = await sendEmail(
             user.email,
             'Reset your All Minds password',
