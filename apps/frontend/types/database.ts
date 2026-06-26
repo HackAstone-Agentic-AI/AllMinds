@@ -60,6 +60,7 @@ export interface ParentCommunication {
   content: string;
   created_at: string;
   learner_anonymous_id?: string;
+  learner_profile_data?: Record<string, any>;
 }
 
 export interface ForumPost {

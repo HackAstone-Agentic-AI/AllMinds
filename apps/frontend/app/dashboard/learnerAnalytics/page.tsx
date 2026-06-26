@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import { api } from '@/lib/api';
+import { getLearnerDisplayName } from '@/lib/learners';
 import {
   BarChart3,
   Brain,
@@ -10,7 +11,6 @@ import {
   AlertTriangle,
   Network,
   RefreshCw,
-  Clock3,
   UserRound,
   TrendingUp,
   ClipboardList,
@@ -43,35 +43,12 @@ type LearnerProfile = {
   updatedAt?: string;
 };
 
-type MotherAgentRequestType =
+type SupportRequestType =
   | 'multi-agent-coordination'
   | 'support-planning'
   | 'assessment-adjustment'
   | 'progress-review'
   | 'attendance-support';
-
-type MotherAgentRequestStatus =
-  | 'draft'
-  | 'queued'
-  | 'processing'
-  | 'routed'
-  | 'completed'
-  | 'failed';
-
-type MotherAgentRequest = {
-  id: string;
-  learnerId: string;
-  learnerLabel: string;
-  targetAgent: 'mother-agent';
-  requestType: MotherAgentRequestType;
-  requestGoal: string;
-  urgency: 'low' | 'medium' | 'high';
-  requestedCapabilities: string[];
-  suggestedSpecialists: string[];
-  contextPayload: Record<string, unknown>;
-  status: MotherAgentRequestStatus;
-  createdAt: string;
-};
 
 type ProgressAnalytics = {
   engagementAverage: number;
@@ -84,25 +61,6 @@ type ProgressAnalytics = {
   supportPriorityScore: number;
   supportPriorityBand: 'Low' | 'Moderate' | 'High';
 };
-
-const REQUEST_STORAGE_KEY = 'all-minds-mother-agent-requests';
-
-function safeReadLocalStorage<T>(key: string, fallback: T): T {
-  if (typeof window === 'undefined') return fallback;
-
-  try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
-}
-
-function safeWriteLocalStorage<T>(key: string, value: T) {
-  if (typeof window === 'undefined') return;
-  window.localStorage.setItem(key, JSON.stringify(value));
-}
 
 function average(values: number[]) {
   if (values.length === 0) return 0;
@@ -121,18 +79,16 @@ function likertToPercent(value: number) {
 
 function mapLearnerRow(row: LearnerProfileRow): LearnerProfile {
   const profile = row.profile_data ?? {};
+  const displayName = getLearnerDisplayName({
+    anonymous_id: row.anonymous_id,
+    profile_data: profile,
+  });
 
   return {
     id: String(row.id),
     anonymousId: row.anonymous_id,
-    pseudonym:
-      profile.pseudonym ||
-      profile.fullName ||
-      profile.full_name ||
-      profile.name ||
-      row.anonymous_id,
-    fullName:
-      profile.fullName || profile.full_name || profile.name || row.anonymous_id,
+    pseudonym: displayName,
+    fullName: displayName,
     grade:
       profile.grade ||
       profile.gradeLevel ||
@@ -165,27 +121,7 @@ function getLearnerLabel(learner: LearnerProfile) {
   );
 }
 
-function getSuggestedSpecialists(requestType: MotherAgentRequestType) {
-  switch (requestType) {
-    case 'assessment-adjustment':
-      return ['Assessment & Pedagogical Planner', 'Learner Profiles'];
-    case 'progress-review':
-      return ['Learner Profiles', 'Assessment & Pedagogical Planner'];
-    case 'attendance-support':
-      return ['Schedule Tracking', 'Learner Profiles'];
-    case 'support-planning':
-      return ['Assessment & Pedagogical Planner', 'Learner Profiles'];
-    case 'multi-agent-coordination':
-    default:
-      return [
-        'Learner Profiles',
-        'Assessment & Pedagogical Planner',
-        'Schedule Tracking',
-      ];
-  }
-}
-
-function getRequestedCapabilities(requestType: MotherAgentRequestType) {
+function getRequestedCapabilities(requestType: SupportRequestType) {
   switch (requestType) {
     case 'assessment-adjustment':
       return [
@@ -386,46 +322,24 @@ export default function LearnerAnalyticsPage() {
   const [learnerProfiles, setLearnerProfiles] = useState<LearnerProfile[]>([]);
   const [selectedLearnerProgress, setSelectedLearnerProgress] = useState<LearnerProgressRow[]>([]);
   const [selectedLearnerId, setSelectedLearnerId] = useState<string>('');
-  const [motherAgentRequests, setMotherAgentRequests] = useState<
-    MotherAgentRequest[]
-  >([]);
   const [loadingLearners, setLoadingLearners] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(false);
   const [agentAnalysis, setAgentAnalysis] = useState('');
   const [agentLoading, setAgentLoading] = useState(false);
   const [agentError, setAgentError] = useState('');
 
-  const [requestType, setRequestType] = useState<MotherAgentRequestType>(
+  const [requestType, setRequestType] = useState<SupportRequestType>(
     'multi-agent-coordination'
   );
   const [urgency, setUrgency] = useState<'low' | 'medium' | 'high'>('medium');
   const [requestGoal, setRequestGoal] = useState('');
+  const [requestStatusMessage, setRequestStatusMessage] = useState('');
+  const [requestStatusTone, setRequestStatusTone] = useState<'success' | 'error' | 'info'>('info');
   const [includeProfile, setIncludeProfile] = useState(true);
   const [includeSupportNeeds, setIncludeSupportNeeds] = useState(true);
   const [includeStrengths, setIncludeStrengths] = useState(true);
   const [includeAnalytics, setIncludeAnalytics] = useState(true);
   const [includeNotes, setIncludeNotes] = useState(true);
-
-  useEffect(() => {
-    const storedRequests = safeReadLocalStorage<MotherAgentRequest[]>(
-      REQUEST_STORAGE_KEY,
-      []
-    );
-    setMotherAgentRequests(storedRequests);
-
-    const handleRequestsUpdated = () => {
-      const updatedRequests = safeReadLocalStorage<MotherAgentRequest[]>(
-        REQUEST_STORAGE_KEY,
-        []
-      );
-      setMotherAgentRequests(updatedRequests);
-    };
-
-    window.addEventListener('motherAgentRequestsUpdated', handleRequestsUpdated);
-    return () => {
-      window.removeEventListener('motherAgentRequestsUpdated', handleRequestsUpdated);
-    };
-  }, []);
 
   useEffect(() => {
     loadLearnerList();
@@ -486,22 +400,10 @@ export default function LearnerAnalyticsPage() {
     [selectedLearnerProgress]
   );
 
-  const suggestedSpecialists = useMemo(
-    () => getSuggestedSpecialists(requestType),
-    [requestType]
-  );
-
   const requestedCapabilities = useMemo(
     () => getRequestedCapabilities(requestType),
     [requestType]
   );
-
-  const learnerRequests = useMemo(() => {
-    if (!selectedLearner) return [];
-    return motherAgentRequests.filter(
-      (request) => request.learnerId === selectedLearner.id
-    );
-  }, [motherAgentRequests, selectedLearner]);
 
   const analyticsNarrative = useMemo(() => {
     if (!selectedLearner || selectedLearnerProgress.length === 0) {
@@ -592,85 +494,60 @@ export default function LearnerAnalyticsPage() {
     }
   };
 
-  const handleCreateMotherAgentRequest = () => {
+  const handleCreateSupportRequest = async () => {
     if (!selectedLearner) return;
     if (!requestGoal.trim()) return;
 
-    const newRequest: MotherAgentRequest = {
-      id: `mother-${Date.now()}`,
-      learnerId: selectedLearner.id,
-      learnerLabel: getLearnerLabel(selectedLearner),
-      targetAgent: 'mother-agent',
-      requestType,
-      requestGoal: requestGoal.trim(),
-      urgency,
-      requestedCapabilities,
-      suggestedSpecialists,
-      status: 'queued',
-      createdAt: new Date().toISOString(),
-      contextPayload: {
-        learnerProfile: includeProfile
-          ? {
-              id: selectedLearner.id,
-              anonymousId: selectedLearner.anonymousId,
-              label: getLearnerLabel(selectedLearner),
-              grade: selectedLearner.grade ?? null,
-              neurotypeTags: selectedLearner.neurotypeTags ?? [],
-            }
-          : null,
-        supportNeeds: includeSupportNeeds
-          ? selectedLearner.supportNeeds ?? []
-          : [],
-        strengths: includeStrengths ? selectedLearner.strengths ?? [] : [],
-        analytics: includeAnalytics
-          ? {
-              engagementAverage: progressAnalytics.engagementAverage,
-              taskCompletionAverage: progressAnalytics.taskCompletionAverage,
-              attendanceRate: progressAnalytics.attendanceRate,
-              progressEntries: progressAnalytics.progressEntries,
-              latestLearningArea: progressAnalytics.latestLearningArea,
-              latestProgressLevel: progressAnalytics.latestProgressLevel,
-              latestAchievements: progressAnalytics.latestAchievements,
-              supportPriorityScore: progressAnalytics.supportPriorityScore,
-              supportPriorityBand: progressAnalytics.supportPriorityBand,
-            }
-          : null,
-        recentNotes: includeNotes ? selectedLearner.recentNotes ?? '' : '',
-      },
+    const trimmedGoal = requestGoal.trim();
+    const contextPayload = {
+      learnerProfile: includeProfile
+        ? {
+            id: selectedLearner.id,
+            anonymousId: selectedLearner.anonymousId,
+            label: getLearnerLabel(selectedLearner),
+            grade: selectedLearner.grade ?? null,
+            neurotypeTags: selectedLearner.neurotypeTags ?? [],
+          }
+        : null,
+      supportNeeds: includeSupportNeeds ? selectedLearner.supportNeeds ?? [] : [],
+      strengths: includeStrengths ? selectedLearner.strengths ?? [] : [],
+      analytics: includeAnalytics
+        ? {
+            engagementAverage: progressAnalytics.engagementAverage,
+            taskCompletionAverage: progressAnalytics.taskCompletionAverage,
+            attendanceRate: progressAnalytics.attendanceRate,
+            progressEntries: progressAnalytics.progressEntries,
+            latestLearningArea: progressAnalytics.latestLearningArea,
+            latestProgressLevel: progressAnalytics.latestProgressLevel,
+            latestAchievements: progressAnalytics.latestAchievements,
+            supportPriorityScore: progressAnalytics.supportPriorityScore,
+            supportPriorityBand: progressAnalytics.supportPriorityBand,
+          }
+        : null,
+      recentNotes: includeNotes ? selectedLearner.recentNotes ?? '' : '',
     };
 
-    const updated = [newRequest, ...motherAgentRequests];
-    setMotherAgentRequests(updated);
-    safeWriteLocalStorage(REQUEST_STORAGE_KEY, updated);
-    window.dispatchEvent(new Event('motherAgentRequestsUpdated'));
-    setRequestGoal('');
+    setRequestStatusTone('info');
+    setRequestStatusMessage('Sending support request...');
 
-    const requestId = newRequest.id;
-    api.chatWithAgent(
-      `Mother Agent request: ${requestType}. Goal: ${requestGoal.trim()}`,
-      {
+    try {
+      await api.chatWithAgent(`Learner support request: ${requestType}. Goal: ${trimmedGoal}`, {
         tool_hint: 'analytics',
         learner_name: getLearnerLabel(selectedLearner),
         records: mapProgressToAgentRecords(selectedLearnerProgress),
+        request_type: requestType,
+        urgency,
+        requested_capabilities: requestedCapabilities,
+        request_context: contextPayload,
         language_pref: localStorage.getItem('allminds_language') || 'en',
-      }
-    ).then(() => {
-      const stored = safeReadLocalStorage<MotherAgentRequest[]>(REQUEST_STORAGE_KEY, []);
-      const patched = stored.map((r) =>
-        r.id === requestId ? { ...r, status: 'completed' as const } : r
-      );
-      safeWriteLocalStorage(REQUEST_STORAGE_KEY, patched);
-      setMotherAgentRequests(patched);
-      window.dispatchEvent(new Event('motherAgentRequestsUpdated'));
-    }).catch(() => {
-      const stored = safeReadLocalStorage<MotherAgentRequest[]>(REQUEST_STORAGE_KEY, []);
-      const patched = stored.map((r) =>
-        r.id === requestId ? { ...r, status: 'failed' as const } : r
-      );
-      safeWriteLocalStorage(REQUEST_STORAGE_KEY, patched);
-      setMotherAgentRequests(patched);
-      window.dispatchEvent(new Event('motherAgentRequestsUpdated'));
-    });
+      });
+      setRequestGoal('');
+      setRequestStatusTone('success');
+      setRequestStatusMessage('Support request sent. Review the AI response in the assistant panel.');
+    } catch (err: any) {
+      setRequestStatusTone('error');
+      setRequestStatusMessage(err?.message || 'Support request failed. Please try again.');
+    }
   };
 
   return (
@@ -679,15 +556,14 @@ export default function LearnerAnalyticsPage() {
         <div>
           <div className="inline-flex items-center gap-2 text-sm font-medium text-blue-600">
             <Brain className="w-4 h-4" />
-            Mother-Agent-Oriented Learning Analytics
+            AI-assisted learning analytics
           </div>
           <h2 className="text-3xl font-bold text-slate-800 mt-2">
             Learner Analytics
           </h2>
           <p className="text-slate-600 mt-1 max-w-4xl">
-            This page now focuses on learner progress analytics using
-            engagement, task completion, and attendance data sourced from
-            learner progress records.
+            Track engagement, task completion, attendance, and support needs from
+            the learner progress records already in your workspace.
           </p>
         </div>
 
@@ -790,7 +666,7 @@ export default function LearnerAnalyticsPage() {
                 <p className="text-sm text-slate-500">Loading progress records…</p>
               ) : (
                 <div className="space-y-5">
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="rounded-xl border border-slate-200 p-4">
                       <p className="text-sm text-slate-500">Learner</p>
                       <p className="font-semibold text-slate-800 mt-1">
@@ -809,14 +685,6 @@ export default function LearnerAnalyticsPage() {
                       </p>
                       <p className="font-semibold text-slate-800 mt-1">
                         {progressAnalytics.latestLearningArea}
-                      </p>
-                    </div>
-                    <div className="rounded-xl border border-slate-200 p-4">
-                      <p className="text-sm text-slate-500">
-                        Mother Agent Requests
-                      </p>
-                      <p className="font-semibold text-slate-800 mt-1">
-                        {learnerRequests.length}
                       </p>
                     </div>
                   </div>
@@ -947,14 +815,13 @@ export default function LearnerAnalyticsPage() {
               <div className="flex items-center gap-2 mb-4">
                 <Network className="w-5 h-5 text-slate-500" />
                 <h3 className="text-lg font-semibold text-slate-800">
-                  Mother Agent Request Builder
+                  Learner Support Request
                 </h3>
               </div>
 
               <p className="text-sm text-slate-600 mb-5 leading-6">
-                Submit a structured learner-support request to the Mother Agent.
-                This request now packages progress-based engagement, task
-                completion, and attendance analytics.
+                Send a structured support request using this learner&apos;s progress,
+                attendance, strengths, and support context.
               </p>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -965,12 +832,12 @@ export default function LearnerAnalyticsPage() {
                   <select
                     value={requestType}
                     onChange={(e) =>
-                      setRequestType(e.target.value as MotherAgentRequestType)
+                      setRequestType(e.target.value as SupportRequestType)
                     }
                     className="w-full px-4 py-3 border border-slate-300 rounded-lg bg-white text-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
                   >
                     <option value="multi-agent-coordination">
-                      Multi-Agent Coordination
+                      Coordinated Support Plan
                     </option>
                     <option value="support-planning">Support Planning</option>
                     <option value="assessment-adjustment">
@@ -1009,7 +876,7 @@ export default function LearnerAnalyticsPage() {
                   value={requestGoal}
                   onChange={(e) => setRequestGoal(e.target.value)}
                   rows={4}
-                  placeholder="Describe the progress-related support need the Mother Agent should coordinate for this learner."
+                  placeholder="Describe the progress-related support need for this learner."
                   className="w-full px-4 py-3 border border-slate-300 rounded-lg bg-white text-slate-900 placeholder-slate-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition resize-none"
                 />
               </div>
@@ -1064,102 +931,29 @@ export default function LearnerAnalyticsPage() {
                 </div>
               </div>
 
-              <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-sm font-medium text-slate-700 mb-2">
-                  Suggested Specialists the Mother Agent May Consult
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {suggestedSpecialists.map((agent) => (
-                    <span
-                      key={agent}
-                      className="text-xs px-3 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200"
-                    >
-                      {agent}
-                    </span>
-                  ))}
-                </div>
-
-                <p className="text-sm font-medium text-slate-700 mt-4 mb-2">
-                  Requested Capabilities
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {requestedCapabilities.map((capability) => (
-                    <span
-                      key={capability}
-                      className="text-xs px-3 py-1 rounded-full bg-white text-slate-700 border border-slate-300"
-                    >
-                      {capability}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
               <div className="mt-5">
                 <button
-                  onClick={handleCreateMotherAgentRequest}
+                  onClick={handleCreateSupportRequest}
                   disabled={!selectedLearner || !requestGoal.trim()}
                   className="inline-flex items-center gap-2 px-4 py-3 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
                 >
                   <RefreshCw className="w-4 h-4" />
-                  Submit to Mother Agent
+                  Send support request
                 </button>
+                {requestStatusMessage && (
+                  <p
+                    className={`mt-3 rounded-lg px-3 py-2 text-sm ${
+                      requestStatusTone === 'success'
+                        ? 'bg-green-50 text-green-700'
+                        : requestStatusTone === 'error'
+                        ? 'bg-red-50 text-red-700'
+                        : 'bg-blue-50 text-blue-700'
+                    }`}
+                  >
+                    {requestStatusMessage}
+                  </p>
+                )}
               </div>
-            </div>
-
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
-              <div className="flex items-center gap-2 mb-4">
-                <Clock3 className="w-5 h-5 text-slate-500" />
-                <h3 className="text-lg font-semibold text-slate-800">
-                  Mother Agent Request Queue
-                </h3>
-              </div>
-
-              {learnerRequests.length === 0 ? (
-                <p className="text-sm text-slate-500">
-                  No Mother Agent requests have been created for this learner
-                  yet.
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {learnerRequests.map((request) => (
-                    <div
-                      key={request.id}
-                      className="rounded-xl border border-slate-200 bg-slate-50 p-4"
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="font-medium text-slate-800">
-                          {request.requestType}
-                        </p>
-                        <span className={`text-xs px-2 py-1 rounded-full ${
-                          request.status === 'completed'
-                            ? 'bg-green-100 text-green-700'
-                            : request.status === 'failed'
-                            ? 'bg-red-100 text-red-700'
-                            : 'bg-amber-100 text-amber-700'
-                        }`}>
-                          {request.status}
-                        </span>
-                      </div>
-                      <p className="text-sm text-slate-700 mt-2 leading-6">
-                        {request.requestGoal}
-                      </p>
-                      <div className="flex flex-wrap gap-2 mt-3">
-                        {request.suggestedSpecialists.map((agent) => (
-                          <span
-                            key={agent}
-                            className="text-xs px-2 py-1 rounded-full bg-white border border-slate-300 text-slate-700"
-                          >
-                            {agent}
-                          </span>
-                        ))}
-                      </div>
-                      <p className="text-xs text-slate-500 mt-3">
-                        Created: {new Date(request.createdAt).toLocaleString()}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
           </div>
         </div>

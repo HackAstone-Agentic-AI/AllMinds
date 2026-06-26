@@ -75,6 +75,7 @@ const register = async (req, res) => {
         res.status(201).json({
             message: 'Registration successful. You can now log in.',
             email: user.email,
+            verification_email_sent: false,
         });
     } catch (error) {
         if (client) {
@@ -114,13 +115,14 @@ const login = async (req, res) => {
             return res.status(401).json({ error: 'Account is deactivated. Contact admin.' });
         }
 
-        // Email verification gate disabled — see register() for re-enable notes.
-
         // Verify password
         const validPassword = await bcrypt.compare(password, user.password_hash);
         if (!validPassword) {
             return res.status(401).json({ error: 'Invalid email or password' });
         }
+
+        // Email verification gate disabled — accounts are usable immediately.
+        // See register() for notes on re-enabling.
 
         // Generate JWT
         const token = jwt.sign(

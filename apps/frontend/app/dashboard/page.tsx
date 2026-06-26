@@ -26,6 +26,7 @@ import {
   ParentCommunication,
   TeacherTask,
 } from '@/types/database';
+import { getLearnerDisplayName } from '@/lib/learners';
 
 type ResourceCategory =
   | 'learner-profiles'
@@ -70,17 +71,6 @@ const formatDate = (dateString: string) =>
     month: 'short',
     year: 'numeric',
   });
-
-const getLearnerName = (learner: LearnerProfile) => {
-  const profile = learner.profile_data || {};
-  return (
-    profile.pseudonym ||
-    profile.fullName ||
-    profile.full_name ||
-    profile.name ||
-    learner.anonymous_id
-  );
-};
 
 const getLessonTitle = (plan: LessonPlan) => plan.title || 'Untitled lesson plan';
 
@@ -141,7 +131,7 @@ export default function DashboardHome() {
     () => ({
       'learner-profiles': learnerProfiles.map((learner) => ({
         id: String(learner.id),
-        title: String(getLearnerName(learner)),
+        title: getLearnerDisplayName(learner),
         subtitle: learner.anonymous_id,
         createdAt: learner.created_at,
         href: `/dashboard/tools/learner-profiles?learnerId=${learner.id}`,
@@ -157,7 +147,10 @@ export default function DashboardHome() {
         id: String(communication.id),
         title:
           communication.type === 'progress' ? 'Progress communication' : 'Concern communication',
-        subtitle: communication.learner_anonymous_id || 'Parent communication',
+        subtitle: getLearnerDisplayName({
+          anonymous_id: communication.learner_anonymous_id || '',
+          profile_data: communication.learner_profile_data || {},
+        }),
         createdAt: communication.created_at,
         href: `/dashboard/community/parent-communication?id=${communication.id}`,
       })),

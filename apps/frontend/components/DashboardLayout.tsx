@@ -37,9 +37,10 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
   const [showLanguageMenu, setShowLanguageMenu] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [desktopCollapsed, setDesktopCollapsed] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(false);
   const router = useRouter();
   const { language, setLanguage, t } = useLanguage();
-  const { setTheme } = usePreferences();
+  const { applyServerThemePreference } = usePreferences();
 
   const loadProfile = useCallback(async () => {
     const token = localStorage.getItem('allminds_token');
@@ -52,13 +53,13 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
       const data = await api.getProfile();
       setProfile(data);
       if (['light', 'dark', 'auto'].includes(data.theme_preference)) {
-        setTheme(data.theme_preference as ThemePreference);
+        applyServerThemePreference(data.theme_preference as ThemePreference);
       }
     } catch (err) {
       console.error(err);
       router.push('/login');
     }
-  }, [router, setTheme]);
+  }, [applyServerThemePreference, router]);
 
   useEffect(() => {
     void loadProfile();
@@ -78,15 +79,25 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
 
   // Restore the desktop collapse preference on mount.
   useEffect(() => {
+    const desktopQuery = window.matchMedia('(min-width: 768px)');
+    const syncViewport = () => {
+      setIsDesktop(desktopQuery.matches);
+      if (desktopQuery.matches) setSidebarOpen(false);
+    };
+
+    syncViewport();
+    desktopQuery.addEventListener('change', syncViewport);
+
     if (localStorage.getItem('allminds_sidebar_collapsed') === 'true') {
       setDesktopCollapsed(true);
     }
+
+    return () => desktopQuery.removeEventListener('change', syncViewport);
   }, []);
 
-  // One hamburger drives both behaviours: a slide-in drawer on mobile,
-  // a persistent collapse on desktop (≥ md).
+  // The same control opens the mobile drawer and collapses the desktop sidebar.
   const toggleSidebar = () => {
-    if (typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches) {
+    if (isDesktop) {
       setDesktopCollapsed((collapsed) => {
         const next = !collapsed;
         localStorage.setItem('allminds_sidebar_collapsed', String(next));
@@ -98,8 +109,14 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
   };
 
   useEffect(() => {
-    setSidebarOpen(false);
-  }, [router]);
+    if (!sidebarOpen || isDesktop) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isDesktop, sidebarOpen]);
 
   useEffect(() => {
     const section = new URLSearchParams(window.location.search).get('settings');
@@ -119,6 +136,13 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
     localStorage.removeItem('allminds_user');
     router.push('/login');
   };
+
+  const handleNavigate = (href: string) => {
+    setSidebarOpen(false);
+    router.push(href);
+  };
+
+  const navigationOpen = isDesktop ? !desktopCollapsed : sidebarOpen;
 
   const tabs = [
     { id: 'home', label: t('nav.home'), icon: Home, href: '/dashboard' },
@@ -148,36 +172,61 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
         />
       )}
 
+      {!navigationOpen && (
+        <div className="fixed left-0 top-0 z-50 flex h-16 w-16 items-center justify-center border-b border-r border-slate-200 bg-white">
+          <button
+            onClick={toggleSidebar}
+            className="rounded-lg p-2 text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+            aria-label="Open navigation menu"
+            aria-expanded="false"
+            aria-controls="main-sidebar"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+        </div>
+      )}
+
       <aside
         id="main-sidebar"
         aria-label="Sidebar navigation"
         className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-slate-200 bg-white transition-transform duration-300 ease-in-out
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} ${desktopCollapsed ? 'md:-translate-x-full' : 'md:translate-x-0'}`}
       >
-        <button
-          onClick={() => router.push('/dashboard')}
-          className="flex h-20 items-center gap-3 border-b border-slate-200 px-5 text-left transition hover:bg-slate-50"
-          aria-label="Go to All Minds dashboard"
-        >
-          <Image
-            src="/allminds-logo.png"
-            alt=""
-            width={44}
-            height={44}
-            className="h-11 w-11 object-contain"
-            priority
-          />
-          <div>
-            <p className="text-xl font-bold text-slate-900">All Minds</p>
-            <p className="text-xs text-slate-500">Teacher workspace</p>
-          </div>
-        </button>
+        <div className="flex h-16 items-center border-b border-slate-200 px-3">
+          <button
+            onClick={() => handleNavigate('/dashboard')}
+            className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-1.5 text-left transition hover:bg-slate-50"
+            aria-label="Go to All Minds dashboard"
+          >
+            <Image
+              src="/allminds-logo.png"
+              alt=""
+              width={38}
+              height={38}
+              className="h-10 w-10 flex-none object-contain"
+              priority
+            />
+            <div className="min-w-0">
+              <p className="truncate text-lg font-bold text-slate-900">All Minds</p>
+              <p className="truncate text-[11px] text-slate-500">Teacher workspace</p>
+            </div>
+          </button>
+          <button
+            onClick={toggleSidebar}
+            className="ml-1 rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+            aria-label="Close navigation menu"
+            aria-expanded="true"
+            aria-controls="main-sidebar"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
 
         <nav className="flex-1 space-y-1 px-3 py-5" aria-label="Dashboard navigation">
           {tabs.map((tab) => (
             <button
               key={tab.id}
-              onClick={() => router.push(tab.href)}
+              onClick={() => handleNavigate(tab.href)}
               className={`flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left text-sm font-medium transition ${
                 activeTab === tab.id
                   ? 'bg-[#0b4f5c] text-white'
@@ -221,22 +270,14 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
       </aside>
 
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white">
-        <div className="flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
+        <div
+          className={`flex h-16 items-center justify-between pr-4 sm:pr-6 lg:pr-8 ${
+            navigationOpen ? 'pl-4 sm:pl-6 lg:pl-8' : 'pl-20'
+          }`}
+        >
           <div className="flex items-center gap-3">
-            {/* Hamburger — drawer toggle on mobile, collapse toggle on desktop */}
             <button
-              onClick={toggleSidebar}
-              className="rounded-lg p-2 text-slate-600 transition hover:bg-slate-100"
-              aria-label={
-                sidebarOpen || !desktopCollapsed ? 'Close navigation menu' : 'Open navigation menu'
-              }
-              aria-expanded={sidebarOpen || !desktopCollapsed}
-              aria-controls="main-sidebar"
-            >
-              {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-            </button>
-            <button
-              onClick={() => router.push('/dashboard')}
+              onClick={() => handleNavigate('/dashboard')}
               className={`flex items-center gap-2 ${desktopCollapsed ? '' : 'md:hidden'}`}
               aria-label="Go to All Minds dashboard"
             >
@@ -336,32 +377,9 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
         </div>
       </header>
 
-      <main className="mx-auto max-w-[1600px] px-4 py-6 pb-24 sm:px-6 lg:px-8 lg:py-8 md:pb-8">
+      <main className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
         {children}
       </main>
-
-      <nav
-        className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white md:hidden"
-        aria-label="Mobile dashboard navigation"
-      >
-        <div className="grid grid-cols-5">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => router.push(tab.href)}
-              className={`flex min-h-16 flex-col items-center justify-center gap-1 px-1 py-2 text-[11px] font-medium leading-tight transition ${
-                activeTab === tab.id
-                  ? 'bg-teal-50 text-[#087d8c]'
-                  : 'text-slate-600 hover:bg-slate-100'
-              }`}
-              aria-current={activeTab === tab.id ? 'page' : undefined}
-            >
-              <tab.icon className="h-5 w-5" />
-              <span className="max-w-full text-center">{tab.label}</span>
-            </button>
-          ))}
-        </div>
-      </nav>
 
       {showSettings && profile && (
         <SettingsPanel

@@ -32,11 +32,11 @@ services:
       - key: BACKEND_URL
         value: https://allminds-backend.onrender.com
       - key: FRONTEND_URL
-        value: https://allminds-frontend.onrender.com
+        value: https://all-minds-ai.com
       - key: AGENTIC_AI_URL
         value: https://allminds-agents.onrender.com
       - key: ALLOWED_ORIGINS
-        value: https://allminds-frontend.onrender.com
+        value: https://all-minds-ai.com,https://www.all-minds-ai.com,https://allminds-frontend.onrender.com
       - key: APP_TIMEZONE
         value: Africa/Johannesburg
       - key: GOOGLE_CLIENT_ID
@@ -81,7 +81,7 @@ services:
           name: allminds-postgres
           property: connectionString
       - key: ALLOWED_ORIGINS
-        value: https://allminds-frontend.onrender.com
+        value: https://all-minds-ai.com,https://www.all-minds-ai.com,https://allminds-frontend.onrender.com
       - key: BACKEND_API_URL
         value: https://allminds-backend.onrender.com/api
       - key: APP_TIMEZONE
@@ -116,4 +116,4 @@ services:
       - key: AGENTIC_AI_URL
         value: https://allminds-agents.onrender.com
       - key: NEXT_PUBLIC_APP_URL
-        value: https://allminds-frontend.onrender.com
+        value: https://all-minds-ai.com

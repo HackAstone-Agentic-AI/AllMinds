@@ -1,7 +1,7 @@
 'use client';
 
 import DashboardLayout from '@/components/DashboardLayout';
-import { Eye, FileText, Users, Calendar, BarChart3 } from 'lucide-react';
+import { Eye, FileText, Users, Calendar } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 export default function ToolsPage() {
@@ -40,14 +40,6 @@ export default function ToolsPage() {
       color: 'purple',
       href: '/dashboard/tools/schedule-tracking',
     },
-    {
-      id: 'learner-analytics',
-      name: 'Learner Analytics',
-      description: 'Track engagement, attendance, and progress with AI-driven insights',
-      icon: BarChart3,
-      color: 'indigo',
-      href: '/dashboard/learnerAnalytics',
-    },
   ];
 
   const getColorClasses = (color: string) => {
@@ -75,12 +67,6 @@ export default function ToolsPage() {
         icon: 'bg-purple-100',
         iconColor: 'text-purple-600',
         border: 'hover:border-purple-300',
-      },
-      indigo: {
-        bg: 'bg-indigo-50',
-        icon: 'bg-indigo-100',
-        iconColor: 'text-indigo-600',
-        border: 'hover:border-indigo-300',
       },
     };
     return colors[color as keyof typeof colors] || colors.blue;

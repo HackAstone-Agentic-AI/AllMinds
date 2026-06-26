@@ -27,9 +27,6 @@ const buildVerificationEmail = (verifyLink) => `
 
 // Called after registration — generates and sends the verification email
 const sendVerificationEmail = async (userId, email) => {
-    // Remove any prior tokens for this user
-    await pool.query('DELETE FROM email_verification_tokens WHERE user_id = $1', [userId]);
-
     const token = crypto.randomBytes(32).toString('hex');
     const tokenHash = hashToken(token);
     const expiresAt = new Date(Date.now() + EXPIRY_MS);
@@ -40,7 +37,22 @@ const sendVerificationEmail = async (userId, email) => {
     );
 
     const verifyLink = `${process.env.FRONTEND_URL}/verify-email?token=${token}`;
-    await sendEmail(email, 'Verify your All Minds account', buildVerificationEmail(verifyLink));
+    const sent = await sendEmail(
+        email,
+        'Verify your All Minds account',
+        buildVerificationEmail(verifyLink),
+    );
+    if (!sent) {
+        await pool.query('DELETE FROM email_verification_tokens WHERE token = $1', [tokenHash]);
+        throw new Error('Verification email delivery failed');
+    }
+
+    await pool.query(
+        'DELETE FROM email_verification_tokens WHERE user_id = $1 AND token <> $2',
+        [userId, tokenHash],
+    );
+
+    return true;
 };
 
 // GET /auth/verify-email?token=...  or  POST /auth/verify-email { token }

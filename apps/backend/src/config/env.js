@@ -63,6 +63,19 @@ const validateEnv = () => {
         console.warn('[env] GROQ_API_KEY is not set in this environment. Ensure the agent service has it before using agent chat.');
     }
 
+    const emailVariables = ['EMAIL_HOST', 'EMAIL_PORT', 'EMAIL_FROM'];
+    const missingEmailVariables = emailVariables.filter((key) => isPlaceholder(process.env[key]));
+    const hasEmailUser = !isPlaceholder(process.env.EMAIL_USER);
+    const hasEmailPass = !isPlaceholder(process.env.EMAIL_PASS);
+    if (missingEmailVariables.length > 0 || hasEmailUser !== hasEmailPass) {
+        console.warn(
+            `[env] Email delivery is incomplete. Check ${[
+                ...missingEmailVariables,
+                ...(hasEmailUser !== hasEmailPass ? ['EMAIL_USER', 'EMAIL_PASS'] : []),
+            ].join(', ')}.`
+        );
+    }
+
     const bcryptRounds = Number(process.env.BCRYPT_ROUNDS || 10);
     if (!Number.isInteger(bcryptRounds) || bcryptRounds < 8 || bcryptRounds > 15) {
         throw new Error('BCRYPT_ROUNDS must be an integer between 8 and 15');
