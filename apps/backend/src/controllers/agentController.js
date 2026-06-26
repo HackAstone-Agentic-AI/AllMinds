@@ -23,7 +23,7 @@ const proxyAgentChat = async (req, res) => {
                     : {}),
             },
             body: JSON.stringify(payload),
-            signal: AbortSignal.timeout(45_000),
+            signal: AbortSignal.timeout(180_000),
         });
 
         const contentType = upstream.headers.get('content-type') || '';

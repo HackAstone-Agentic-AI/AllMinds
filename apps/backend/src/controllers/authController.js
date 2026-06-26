@@ -1,7 +1,6 @@
 const pool = require('../config/database');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const { sendVerificationEmail } = require('./emailVerificationController');
 
 // User Registration
 const register = async (req, res) => {
@@ -46,9 +45,12 @@ const register = async (req, res) => {
         client = await pool.connect();
         await client.query('BEGIN');
 
+        // Email verification is currently disabled (no SMTP configured), so accounts
+        // are created already verified. Re-enable by setting email_verified to false
+        // and restoring the verification email send below once SMTP creds are in place.
         const result = await client.query(
-            `INSERT INTO users (email, password_hash, full_name, role, school_name, province, city, phone, language_pref)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            `INSERT INTO users (email, password_hash, full_name, role, school_name, province, city, phone, language_pref, email_verified)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true)
              RETURNING id, email, full_name, role, school_name, province`,
             [normalizedEmail, password_hash, normalizedFullName, 'teacher', school_name, province, city, phone, language_pref || 'en']
         );
@@ -69,13 +71,9 @@ const register = async (req, res) => {
 
         await client.query('COMMIT');
 
-        // Send verification email (non-blocking — failure logged but registration still succeeds)
-        sendVerificationEmail(user.id, user.email).catch((err) => {
-            console.error('Failed to send verification email after registration:', err);
-        });
-
+        // Email verification disabled — accounts are usable immediately.
         res.status(201).json({
-            message: 'Registration successful. Please check your email to verify your account before logging in.',
+            message: 'Registration successful. You can now log in.',
             email: user.email,
         });
     } catch (error) {
@@ -116,14 +114,7 @@ const login = async (req, res) => {
             return res.status(401).json({ error: 'Account is deactivated. Contact admin.' });
         }
 
-        // Block login until email is verified
-        if (!user.email_verified) {
-            return res.status(403).json({
-                error: 'email_not_verified',
-                message: 'Please verify your email address before logging in. Check your inbox for the verification link.',
-                email: user.email,
-            });
-        }
+        // Email verification gate disabled — see register() for re-enable notes.
 
         // Verify password
         const validPassword = await bcrypt.compare(password, user.password_hash);

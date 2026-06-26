@@ -68,6 +68,13 @@ export const api = {
   getCalendarStatus: () => request('/calendar/status'),
   getCalendarConnectUrl: () => request('/calendar/connect?format=json'),
   disconnectCalendar: () => request('/calendar/disconnect', { method: 'DELETE' }),
+  createCalendarEvent: (data: {
+    title: string;
+    start_time: string;
+    notes?: string;
+    date?: string;
+    duration_minutes?: number;
+  }) => request('/calendar/events', { method: 'POST', body: JSON.stringify(data) }),
 
   // Learners
   getLearners: () => request('/learners'),

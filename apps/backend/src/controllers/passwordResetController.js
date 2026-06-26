@@ -28,7 +28,7 @@ const forgotPassword = async (req, res) => {
 
         const token = crypto.randomBytes(32).toString('hex');
         const tokenHash = hashToken(token);
-        const expiresAt = new Date(Date.now() + 3600000); // 1 hour
+        const expiresAt = new Date(Date.now() + 86400000); // 24 hours
 
         await pool.query(
             'INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES ($1, $2, $3)',
@@ -38,7 +38,7 @@ const forgotPassword = async (req, res) => {
         const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
         const html = `
             <h2>Reset Your AllMinds Password</h2>
-            <p>Click the link below to reset your password. This link expires in 1 hour.</p>
+            <p>Click the link below to reset your password. This link expires in 24 hours.</p>
             <a href="${resetLink}">${resetLink}</a>
             <p>If you did not request this, please ignore this email.</p>
         `;

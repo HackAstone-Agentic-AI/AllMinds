@@ -100,7 +100,7 @@ async def get_authenticated_user_id(authorization: Optional[str]) -> int:
         raise HTTPException(status_code=503, detail="Authentication service is not configured.")
 
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(
                 f"{backend_api_url}/auth/profile",
                 headers={"Authorization": authorization},

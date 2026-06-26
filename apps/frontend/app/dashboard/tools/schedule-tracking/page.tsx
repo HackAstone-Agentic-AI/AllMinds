@@ -21,7 +21,36 @@ export default function ScheduleTrackingPage() {
   const [loadingSchedule, setLoadingSchedule] = useState(false);
   const [savingItem, setSavingItem] = useState(false);
   const [error, setError] = useState('');
+  const [calendarConnected, setCalendarConnected] = useState(false);
+  const [calendarEmail, setCalendarEmail] = useState<string | null>(null);
+  const [syncNotice, setSyncNotice] = useState('');
   const router = useRouter();
+
+  useEffect(() => {
+    api
+      .getCalendarStatus()
+      .then((status) => {
+        setCalendarConnected(Boolean(status?.connected));
+        setCalendarEmail(status?.gmail_email ?? null);
+      })
+      .catch(() => {
+        setCalendarConnected(false);
+        setCalendarEmail(null);
+      });
+  }, []);
+
+  const connectGoogleCalendar = async () => {
+    try {
+      const { url } = await api.getCalendarConnectUrl();
+      window.location.href = url;
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : 'Could not start the Google Calendar connection.',
+      );
+    }
+  };
 
   const loadLearnersFromDatabase = useCallback(async () => {
     setLoadingLearners(true);
@@ -85,6 +114,7 @@ export default function ScheduleTrackingPage() {
 
     setSavingItem(true);
     setError('');
+    setSyncNotice('');
     try {
       const item = await api.createScheduleItem({
         learner_id: selectedLearnerId,
@@ -95,6 +125,22 @@ export default function ScheduleTrackingPage() {
       setScheduleItems((current) =>
         [...current, item].sort((a, b) => a.start_time.localeCompare(b.start_time)),
       );
+
+      // Mirror the item to the teacher's Google Calendar when connected. A sync
+      // failure must not lose the item, which is already saved above.
+      if (calendarConnected) {
+        try {
+          await api.createCalendarEvent({
+            title: newItem.title.trim(),
+            start_time: newItem.time.trim(),
+            notes: newItem.notes.trim() || undefined,
+          });
+          setSyncNotice('Added to your Google Calendar.');
+        } catch {
+          setSyncNotice('Saved here, but it could not be added to Google Calendar. Try reconnecting in Settings.');
+        }
+      }
+
       setNewItem({ title: '', time: '', notes: '' });
     } catch (requestError) {
       setError(
@@ -146,6 +192,39 @@ export default function ScheduleTrackingPage() {
           >
             <AlertCircle className="mt-0.5 h-5 w-5 flex-none" />
             {error}
+          </div>
+        )}
+
+        <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <Calendar className="mt-0.5 h-5 w-5 flex-none text-[#087d8c]" />
+            <div>
+              <p className="text-sm font-semibold text-slate-800">Google Calendar</p>
+              {calendarConnected ? (
+                <p className="text-sm text-slate-600">
+                  Connected{calendarEmail ? ` as ${calendarEmail}` : ''} — new schedule items are added to your calendar.
+                </p>
+              ) : (
+                <p className="text-sm text-slate-600">
+                  Connect your Google Calendar to sync schedule items automatically.
+                </p>
+              )}
+            </div>
+          </div>
+          {!calendarConnected && (
+            <button
+              type="button"
+              onClick={() => void connectGoogleCalendar()}
+              className="rounded-lg bg-[#0b4f5c] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#083f49]"
+            >
+              Connect
+            </button>
+          )}
+        </div>
+
+        {syncNotice && (
+          <div className="rounded-lg border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800">
+            {syncNotice}
           </div>
         )}
 
