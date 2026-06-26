@@ -16,6 +16,7 @@ export default function LoginPage() {
   const [unverifiedEmail, setUnverifiedEmail] = useState('');
   const [resendSent, setResendSent] = useState(false);
   const [resendError, setResendError] = useState('');
+  const [resendingVerification, setResendingVerification] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -39,6 +40,9 @@ export default function LoginPage() {
   const handleLogin = async (event: React.FormEvent) => {
     event.preventDefault();
     setError('');
+    setUnverifiedEmail('');
+    setResendSent(false);
+    setResendError('');
     setLoading(true);
 
     try {
@@ -48,8 +52,9 @@ export default function LoginPage() {
       router.push('/dashboard');
     } catch (err: unknown) {
       if (err instanceof ApiError && err.code === 'email_not_verified') {
-        setUnverifiedEmail(email);
+        setUnverifiedEmail(email.trim());
       } else {
+        setUnverifiedEmail('');
         setError(err instanceof Error ? err.message : 'Login failed');
       }
     } finally {
@@ -59,6 +64,21 @@ export default function LoginPage() {
 
   const handleGoogleLogin = () => {
     window.location.href = api.getOAuthUrl('google');
+  };
+
+  const handleResendVerification = async () => {
+    if (!unverifiedEmail || resendingVerification) return;
+
+    setResendingVerification(true);
+    setResendError('');
+    try {
+      await api.resendVerification(unverifiedEmail);
+      setResendSent(true);
+    } catch (err: unknown) {
+      setResendError(err instanceof Error ? err.message : 'Could not resend the email.');
+    } finally {
+      setResendingVerification(false);
+    }
   };
 
   return (
@@ -83,24 +103,21 @@ export default function LoginPage() {
           className="mb-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 space-y-2"
         >
           <p className="font-medium">Email not verified</p>
-          <p>Please verify your email address before logging in. Check your inbox for the link.</p>
+          <p>
+            Please verify <span className="font-medium">{unverifiedEmail}</span> before logging in.
+            Check your inbox or send yourself a fresh link.
+          </p>
           {!resendSent ? (
             <button
-              onClick={() =>
-                api.resendVerification(unverifiedEmail)
-                  .then(() => setResendSent(true))
-                  .catch((err: unknown) =>
-                    setResendError(
-                      err instanceof Error ? err.message : 'Could not resend the email.',
-                    ),
-                  )
-              }
-              className="font-semibold underline hover:no-underline"
+              type="button"
+              onClick={() => void handleResendVerification()}
+              disabled={resendingVerification}
+              className="font-semibold underline hover:no-underline disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Resend verification email
+              {resendingVerification ? 'Sending verification email...' : 'Resend verification email'}
             </button>
           ) : (
-            <p className="text-emerald-700 font-medium">Verification email sent — check your inbox.</p>
+            <p className="text-emerald-700 font-medium">Verification email sent. Check your inbox.</p>
           )}
           {resendError && <p className="text-red-700">{resendError}</p>}
         </div>

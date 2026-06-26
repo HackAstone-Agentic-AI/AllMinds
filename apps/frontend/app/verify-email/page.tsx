@@ -60,7 +60,7 @@ function VerifyEmailInner() {
         {status === 'verifying' && (
           <div className="text-center space-y-4">
             <Loader2 className="w-12 h-12 text-[#0b4f5c] animate-spin mx-auto" />
-            <h1 className="text-xl font-semibold text-slate-800">Verifying your email…</h1>
+            <h1 className="text-xl font-semibold text-slate-800">Verifying your email...</h1>
           </div>
         )}
 
@@ -115,7 +115,7 @@ function VerifyEmailInner() {
                   className="w-full bg-[#0b4f5c] hover:bg-[#083f49] text-white font-medium py-3 rounded-lg transition disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {resending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
-                  {resending ? 'Sending…' : 'Resend verification email'}
+                  {resending ? 'Sending...' : 'Resend verification email'}
                 </button>
               </div>
             ) : (

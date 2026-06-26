@@ -93,6 +93,7 @@ export default function SignupPage() {
           <p className="text-xs text-slate-500">
             Didn&apos;t receive it? Check your spam folder or{' '}
             <button
+              type="button"
               disabled={resending}
               onClick={() => {
                 if (resending) return;
@@ -109,7 +110,7 @@ export default function SignupPage() {
               }}
               className="text-[#087d8c] hover:underline font-medium disabled:opacity-50"
             >
-              {resending ? 'sending…' : 'resend the email'}
+              {resending ? 'sending...' : 'resend the email'}
             </button>
             .
           </p>
