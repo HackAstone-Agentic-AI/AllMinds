@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { jsPDF } from 'jspdf';
 import DashboardLayout from '@/components/DashboardLayout';
 import { LearnerProfile, ParentCommunication } from '@/types/database';
-import { ArrowLeft, Mail, Download, FileText } from 'lucide-react';
+import { ArrowLeft, Mail, Download, FileText, Eye, EyeOff, RefreshCw } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { getLearnerDisplayName } from '@/lib/learners';
@@ -18,6 +18,10 @@ export default function ParentCommunicationPage() {
   const [generating, setGenerating] = useState(false);
   const [drafting, setDrafting] = useState(false);
   const [message, setMessage] = useState('');
+  // TC-PC-007: view full letter inline
+  const [viewingLetterId, setViewingLetterId] = useState<number | null>(null);
+  // TC-PC-008: regenerate a saved letter with fresh data
+  const [regeneratingId, setRegeneratingId] = useState<number | null>(null);
   const router = useRouter();
 
   const loadData = useCallback(async () => {
@@ -37,6 +41,38 @@ export default function ParentCommunicationPage() {
     void loadData();
   }, [loadData]);
 
+  const buildLearnerContext = async (learnerId: string, learnerLabel: string) => {
+    try {
+      const [progressRows, sensoryRows] = await Promise.all([
+        api.getProgress(Number(learnerId)),
+        api.getSensoryLogs(Number(learnerId)),
+      ]);
+      const latestProgress = Array.isArray(progressRows) && progressRows.length > 0
+        ? progressRows[0].progress_data
+        : null;
+      const recentBehavior = Array.isArray(sensoryRows) && sensoryRows.length > 0
+        ? sensoryRows[0].log_data
+        : null;
+      const contextParts: string[] = [];
+      if (latestProgress) {
+        if (latestProgress.area) contextParts.push(`Learning area: ${latestProgress.area}`);
+        if (latestProgress.level) contextParts.push(`Progress level: ${latestProgress.level}`);
+        if (latestProgress.achievements) contextParts.push(`Achievements: ${latestProgress.achievements}`);
+        if (latestProgress.attendance) contextParts.push(`Attendance: ${latestProgress.attendance}`);
+      }
+      if (recentBehavior) {
+        if (recentBehavior.behavior) contextParts.push(`Recent behaviour observation: ${recentBehavior.behavior}`);
+        if (recentBehavior.trigger) contextParts.push(`Trigger noted: ${recentBehavior.trigger}`);
+        if (recentBehavior.response) contextParts.push(`Support response: ${recentBehavior.response}`);
+      }
+      return contextParts.length > 0
+        ? ` Current learner data — ${contextParts.join('; ')}.`
+        : '';
+    } catch {
+      return '';
+    }
+  };
+
   const draftWithAI = async () => {
     if (!selectedLearner) return;
 
@@ -53,8 +89,10 @@ export default function ParentCommunicationPage() {
       const notesContext = existingNotes
         ? ` Incorporate these notes from the teacher: ${existingNotes}`
         : '';
+      // TC-PC-008: always fetch fresh learner data before drafting
+      const freshData = await buildLearnerContext(selectedLearner, learnerLabel);
       const result = await api.chatWithAgent(
-        `Draft a professional, empathetic parent ${typeLabel} for a neurodivergent learner (${learnerLabel}).${notesContext}`,
+        `Draft a professional, empathetic parent ${typeLabel} for a neurodivergent learner (${learnerLabel}).${freshData}${notesContext}`,
         {
           thread_id: `parent-comm-${selectedLearner}-${letterType}`,
           tool_hint: 'parent',
@@ -74,6 +112,47 @@ export default function ParentCommunicationPage() {
       setMessage(err instanceof Error ? err.message : 'Failed to draft letter.');
     } finally {
       setDrafting(false);
+    }
+  };
+
+  // TC-PC-008: regenerate a previously saved letter with current learner data
+  const regenerateLetter = async (comm: ParentCommunication) => {
+    setRegeneratingId(comm.id);
+    setMessage('');
+    try {
+      const learnerId = String(comm.learner_id);
+      const learnerLabel = getLearnerDisplayName({
+        anonymous_id: comm.learner_anonymous_id || `Learner ${comm.learner_id}`,
+        profile_data: comm.learner_profile_data || {},
+      }).replace(/[^a-zA-Z0-9 \-_]/g, '').trim().slice(0, 40) || `Learner ${learnerId}`;
+      const typeLabel = comm.type === 'progress' ? 'progress report' : 'concern letter';
+      const freshData = await buildLearnerContext(learnerId, learnerLabel);
+      const result = await api.chatWithAgent(
+        `Draft a professional, empathetic parent ${typeLabel} for a neurodivergent learner (${learnerLabel}).${freshData} This is a regeneration — use the most current learner data above.`,
+        {
+          thread_id: `parent-comm-regen-${comm.id}`,
+          tool_hint: 'parent',
+          communication_type: comm.type,
+          learner_name: learnerLabel,
+          language_pref:
+            (typeof window !== 'undefined' && localStorage.getItem('allminds_language')) || 'en',
+        },
+      );
+      const draft: string = result?.response ?? '';
+      if (draft) {
+        // Pre-fill the create form with the regenerated draft so the teacher can review and save
+        setSelectedLearner(learnerId);
+        setLetterType(comm.type);
+        setContent(draft);
+        setMessage('Letter regenerated with current learner data. Review and save to create a new version.');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } else {
+        setMessage('Regeneration returned no content. Please try again.');
+      }
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Failed to regenerate letter.');
+    } finally {
+      setRegeneratingId(null);
     }
   };
 
@@ -342,7 +421,32 @@ export default function ParentCommunicationPage() {
                       </span>
                     </div>
 
-                    <p className="text-sm text-slate-600 mb-3 line-clamp-3">{comm.content}</p>
+                    {/* TC-PC-007: toggle full letter view */}
+                    {viewingLetterId === comm.id ? (
+                      <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 mb-3 text-sm text-slate-700 whitespace-pre-wrap max-h-60 overflow-y-auto">
+                        {comm.content}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-slate-600 mb-3 line-clamp-3">{comm.content}</p>
+                    )}
+
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      <button
+                        onClick={() => setViewingLetterId(viewingLetterId === comm.id ? null : comm.id)}
+                        className="bg-blue-50 hover:bg-blue-100 text-blue-700 px-3 py-2 rounded text-xs font-medium transition flex items-center gap-1"
+                      >
+                        {viewingLetterId === comm.id ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                        {viewingLetterId === comm.id ? 'Collapse' : 'View'}
+                      </button>
+                      <button
+                        onClick={() => void regenerateLetter(comm)}
+                        disabled={regeneratingId === comm.id}
+                        className="bg-amber-50 hover:bg-amber-100 text-amber-700 px-3 py-2 rounded text-xs font-medium transition flex items-center gap-1 disabled:opacity-50"
+                      >
+                        <RefreshCw className={`w-3 h-3 ${regeneratingId === comm.id ? 'animate-spin' : ''}`} />
+                        {regeneratingId === comm.id ? 'Regenerating…' : 'Regenerate'}
+                      </button>
+                    </div>
 
                     <div className="grid grid-cols-3 gap-2">
                       <button

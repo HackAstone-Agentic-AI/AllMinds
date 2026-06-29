@@ -84,7 +84,12 @@ const bulkCreateLearners = async (req, res) => {
             insertedCount += insertResult.rowCount;
         }
         await client.query('COMMIT');
-        res.status(201).json({ message: `${insertedCount} learners uploaded` });
+        const skippedCount = learners.length - insertedCount;
+        const parts = [`${insertedCount} learner${insertedCount !== 1 ? 's' : ''} uploaded`];
+        if (skippedCount > 0) {
+            parts.push(`${skippedCount} duplicate${skippedCount !== 1 ? 's' : ''} skipped`);
+        }
+        res.status(201).json({ message: parts.join(', '), inserted: insertedCount, skipped: skippedCount });
     } catch (err) {
         await client.query('ROLLBACK').catch((rbErr) => console.error('Rollback error:', rbErr));
         console.error(err);

@@ -45,6 +45,7 @@ function AssessmentPlannerInner() {
     subject: '',
     topic: '',
     grade: '',
+    curriculum: '',
     supportNeed: '',
     difficulty: '',
     materialType: 'lesson_plan',
@@ -130,15 +131,20 @@ function AssessmentPlannerInner() {
       const difficultyContext = plannerInput.difficulty
         ? `Difficulty level: ${plannerInput.difficulty}.`
         : '';
+      // TC-AIA-003: include curriculum alignment in the prompt
+      const curriculumContext = plannerInput.curriculum
+        ? `Curriculum / exam board: ${plannerInput.curriculum}. Align every objective, activity, and assessment item explicitly to this curriculum's outcomes.`
+        : 'Curriculum: DCAPS (South African Department of Basic Education Curriculum and Assessment Policy Statement). Align every objective, activity, and assessment item explicitly to DCAPS outcomes for the stated subject and grade.';
 
       const response = await api.chatWithAgent(
-        `Create a complete ${materialLabel}. Grade: ${plannerInput.grade}. Subject: ${plannerInput.subject}. Topic: ${plannerInput.topic}. ${supportContext} ${difficultyContext} Produce every section in full — do not truncate.`,
+        `Create a complete ${materialLabel}. Grade: ${plannerInput.grade}. Subject: ${plannerInput.subject}. Topic: ${plannerInput.topic}. ${curriculumContext} ${supportContext} ${difficultyContext} Produce every section in full — do not truncate.`,
         {
           thread_id: `assessment-planner-${teacherProfile?.id ?? 'guest'}`,
           tool_hint: 'lesson',
           grade: plannerInput.grade,
           subject: plannerInput.subject,
           topic: plannerInput.topic,
+          curriculum: plannerInput.curriculum || 'DCAPS',
           support_need: plannerInput.supportNeed || undefined,
           difficulty: plannerInput.difficulty || undefined,
           material_type: plannerInput.materialType,
@@ -510,6 +516,25 @@ function AssessmentPlannerInner() {
                     className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition"
                     placeholder="e.g. 5"
                   />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Curriculum / Exam Board
+                    <span className="ml-1 text-xs text-slate-400">(TC-AIA-003)</span>
+                  </label>
+                  <select
+                    value={plannerInput.curriculum}
+                    onChange={(e) => setPlannerInput((c) => ({ ...c, curriculum: e.target.value }))}
+                    className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition bg-white"
+                  >
+                    <option value="">DCAPS (South Africa — default)</option>
+                    <option value="DCAPS">DCAPS</option>
+                    <option value="IEB">IEB (Independent Examinations Board)</option>
+                    <option value="Cambridge">Cambridge International</option>
+                    <option value="UK National Curriculum">UK National Curriculum</option>
+                    <option value="Common Core">Common Core (US)</option>
+                    <option value="Australian Curriculum">Australian Curriculum</option>
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-2">{t('planner.difficulty')}</label>

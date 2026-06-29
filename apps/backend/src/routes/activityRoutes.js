@@ -11,6 +11,7 @@ const {
     getRecentActivities,
     getScheduleItems,
     getTasks,
+    updateScheduleItem,
     updateTask,
 } = require('../controllers/activityController');
 
@@ -28,6 +29,7 @@ router.post('/tasks', createTask);
 router.patch('/tasks/:taskId', updateTask);
 router.get('/schedule-items', getScheduleItems);
 router.post('/schedule-items', createScheduleItem);
+router.patch('/schedule-items/:scheduleItemId', updateScheduleItem);
 router.delete('/schedule-items/:scheduleItemId', deleteScheduleItem);
 
 module.exports = router;

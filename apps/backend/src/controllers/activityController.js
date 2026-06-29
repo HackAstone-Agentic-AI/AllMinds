@@ -363,8 +363,90 @@ const createScheduleItem = async (req, res) => {
 
         res.status(201).json(result.rows[0]);
     } catch (err) {
+        if (err.code === '23505') {
+            return res.status(409).json({ error: 'A schedule item for this learner already exists at that time' });
+        }
         console.error(err);
         res.status(500).json({ error: 'Failed to create schedule item' });
+    }
+};
+
+// Group 2 (TC-SCH-004): Update an existing schedule item
+const updateScheduleItem = async (req, res) => {
+    const teacherId = req.user.id;
+    const scheduleItemId = Number(req.params.scheduleItemId);
+
+    if (!Number.isInteger(scheduleItemId) || scheduleItemId <= 0) {
+        return res.status(400).json({ error: 'Invalid schedule item ID' });
+    }
+
+    const updates = {};
+    if (typeof req.body.title === 'string') {
+        const title = req.body.title.trim();
+        if (!title || title.length > 160) {
+            return res.status(400).json({ error: 'Title is required and must be 160 characters or fewer' });
+        }
+        updates.title = title;
+    }
+    if (typeof req.body.start_time === 'string') {
+        const startTime = req.body.start_time.trim();
+        if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime)) {
+            return res.status(400).json({ error: 'start_time must use HH:MM format' });
+        }
+        updates.start_time = startTime;
+    }
+    if (typeof req.body.notes === 'string') {
+        const notes = req.body.notes.trim();
+        if (notes.length > 1000) {
+            return res.status(400).json({ error: 'Notes must be 1000 characters or fewer' });
+        }
+        updates.notes = notes || null;
+    }
+
+    if (Object.keys(updates).length === 0) {
+        return res.status(400).json({ error: 'No valid fields to update' });
+    }
+
+    const fields = [];
+    const values = [teacherId, scheduleItemId];
+    let paramIndex = values.length + 1;
+
+    if (updates.title !== undefined) {
+        fields.push(`title = $${paramIndex++}`);
+        values.push(updates.title);
+    }
+    if (updates.start_time !== undefined) {
+        fields.push(`start_time = $${paramIndex++}::time`);
+        values.push(updates.start_time);
+    }
+    if (updates.notes !== undefined) {
+        fields.push(`notes = $${paramIndex++}`);
+        values.push(updates.notes);
+    }
+    fields.push('updated_at = CURRENT_TIMESTAMP');
+
+    try {
+        const result = await pool.query(
+            `UPDATE learner_schedule_items
+             SET ${fields.join(', ')}
+             WHERE teacher_id = $1 AND id = $2
+             RETURNING id, teacher_id, learner_id, title,
+                       to_char(start_time, 'HH24:MI') AS start_time,
+                       notes, created_at, updated_at`,
+            values
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Schedule item not found' });
+        }
+
+        res.json(result.rows[0]);
+    } catch (err) {
+        if (err.code === '23505') {
+            return res.status(409).json({ error: 'A schedule item for this learner already exists at that time' });
+        }
+        console.error(err);
+        res.status(500).json({ error: 'Failed to update schedule item' });
     }
 };
 
@@ -406,5 +488,6 @@ module.exports = {
     getRecentActivities,
     getScheduleItems,
     getTasks,
+    updateScheduleItem,
     updateTask,
 };

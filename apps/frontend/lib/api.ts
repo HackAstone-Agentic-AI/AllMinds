@@ -98,6 +98,9 @@ createProgress: (learnerId: number, data: any) =>
   // Forum
   getForumPosts: () => request('/forum'),
   createForumPost: (data: any) => request('/forum', { method: 'POST', body: JSON.stringify(data) }),
+  getForumComments: (postId: number) => request(`/forum/${postId}/comments`),
+  createForumComment: (postId: number, content: string) =>
+    request(`/forum/${postId}/comments`, { method: 'POST', body: JSON.stringify({ content }) }),
 
   // Parent Communications
   getParentCommunications: (learnerId?: string) => {
@@ -130,6 +133,8 @@ createProgress: (learnerId: number, data: any) =>
       method: 'POST',
       body: JSON.stringify(data),
     }),
+  updateScheduleItem: (id: number, data: { title?: string; start_time?: string; notes?: string }) =>
+    request(`/activities/schedule-items/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteScheduleItem: (id: number) =>
     request(`/activities/schedule-items/${id}`, { method: 'DELETE' }),
 

@@ -319,8 +319,15 @@ function SimpleBarGraph({
 }
 
 export default function LearnerAnalyticsPage() {
+  type SensoryLogRow = {
+    id: number;
+    log_data: Record<string, any> | null;
+    logged_at: string;
+  };
+
   const [learnerProfiles, setLearnerProfiles] = useState<LearnerProfile[]>([]);
   const [selectedLearnerProgress, setSelectedLearnerProgress] = useState<LearnerProgressRow[]>([]);
+  const [selectedSensoryLogs, setSelectedSensoryLogs] = useState<SensoryLogRow[]>([]);
   const [selectedLearnerId, setSelectedLearnerId] = useState<string>('');
   const [loadingLearners, setLoadingLearners] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(false);
@@ -348,11 +355,13 @@ export default function LearnerAnalyticsPage() {
   useEffect(() => {
     if (!selectedLearnerId) {
       setSelectedLearnerProgress([]);
+      setSelectedSensoryLogs([]);
       setAgentAnalysis('');
       setAgentError('');
       return;
     }
     loadLearnerProgress(selectedLearnerId);
+    loadSensoryLogs(selectedLearnerId);
     setAgentAnalysis('');
     setAgentError('');
   }, [selectedLearnerId]);
@@ -389,6 +398,16 @@ export default function LearnerAnalyticsPage() {
       setSelectedLearnerProgress([]);
     } finally {
       setLoadingProgress(false);
+    }
+  };
+
+  const loadSensoryLogs = async (learnerId: string) => {
+    try {
+      const rows = (await api.getSensoryLogs(Number(learnerId))) as SensoryLogRow[];
+      setSelectedSensoryLogs(rows ?? []);
+    } catch (err) {
+      console.error('Failed to load sensory logs:', err);
+      setSelectedSensoryLogs([]);
     }
   };
 
@@ -798,6 +817,45 @@ export default function LearnerAnalyticsPage() {
                     <p className="text-slate-700 mt-2 leading-6">
                       {progressAnalytics.latestAchievements}
                     </p>
+                  </div>
+
+                  {/* TC-BEH-005: Behaviour & Sensory Observations */}
+                  <div className="rounded-xl border border-slate-200 p-4">
+                    <h4 className="font-semibold text-slate-800 mb-3">
+                      Behaviour &amp; Sensory Observations
+                    </h4>
+                    {selectedSensoryLogs.length === 0 ? (
+                      <p className="text-sm text-slate-400">No behaviour or sensory observations logged yet.</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {selectedSensoryLogs.slice(0, 5).map((log) => (
+                          <div key={log.id} className="bg-amber-50 border border-amber-100 rounded-lg p-3 text-sm">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-1">
+                              {log.log_data?.behavior && (
+                                <div><span className="font-medium text-amber-800">Behaviour:</span> <span className="text-slate-700">{log.log_data.behavior}</span></div>
+                              )}
+                              {log.log_data?.trigger && (
+                                <div><span className="font-medium text-amber-800">Trigger:</span> <span className="text-slate-700">{log.log_data.trigger}</span></div>
+                              )}
+                              {log.log_data?.response && (
+                                <div><span className="font-medium text-amber-800">Response:</span> <span className="text-slate-700">{log.log_data.response}</span></div>
+                              )}
+                              {log.log_data?.notes && (
+                                <div className="md:col-span-2"><span className="font-medium text-amber-800">Notes:</span> <span className="text-slate-700">{log.log_data.notes}</span></div>
+                              )}
+                            </div>
+                            <p className="text-xs text-slate-400 mt-2">
+                              {new Date(log.logged_at).toLocaleDateString()}
+                            </p>
+                          </div>
+                        ))}
+                        {selectedSensoryLogs.length > 5 && (
+                          <p className="text-xs text-slate-400">
+                            Showing 5 most recent of {selectedSensoryLogs.length} observations.
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div className="rounded-xl border border-slate-200 p-4">

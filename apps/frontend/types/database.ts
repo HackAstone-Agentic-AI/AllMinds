@@ -70,6 +70,15 @@ export interface ForumPost {
   content: string;
   created_at: string;
   author_name?: string;
+  comment_count?: number;
+}
+
+export interface ForumComment {
+  id: number;
+  post_id: number;
+  content: string;
+  created_at: string;
+  author_name?: string;
 }
 
 export interface Activity {

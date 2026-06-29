@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
-import { ForumPost } from '@/types/database';
-import { ArrowLeft, MessageSquare, Plus, TriangleAlert as AlertTriangle } from 'lucide-react';
+import { ForumPost, ForumComment } from '@/types/database';
+import { ArrowLeft, ChevronDown, ChevronUp, MessageSquare, Plus, Send, TriangleAlert as AlertTriangle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 
@@ -13,6 +13,11 @@ export default function ForumPage() {
   const [newPost, setNewPost] = useState({ title: '', content: '' });
   const [posting, setPosting] = useState(false);
   const [message, setMessage] = useState('');
+  const [expandedPostId, setExpandedPostId] = useState<number | null>(null);
+  const [comments, setComments] = useState<Record<number, ForumComment[]>>({});
+  const [loadingComments, setLoadingComments] = useState<Record<number, boolean>>({});
+  const [newComment, setNewComment] = useState<Record<number, string>>({});
+  const [postingComment, setPostingComment] = useState<Record<number, boolean>>({});
   const router = useRouter();
 
   const loadPosts = useCallback(async () => {
@@ -55,6 +60,50 @@ export default function ForumPage() {
       setMessage(err.message || 'Failed to create post');
     } finally {
       setPosting(false);
+    }
+  };
+
+  const toggleComments = async (postId: number) => {
+    if (expandedPostId === postId) {
+      setExpandedPostId(null);
+      return;
+    }
+    setExpandedPostId(postId);
+    if (!comments[postId]) {
+      setLoadingComments((prev) => ({ ...prev, [postId]: true }));
+      try {
+        const data = await api.getForumComments(postId);
+        setComments((prev) => ({ ...prev, [postId]: data }));
+      } catch (err) {
+        console.error('Failed to load comments:', err);
+      } finally {
+        setLoadingComments((prev) => ({ ...prev, [postId]: false }));
+      }
+    }
+  };
+
+  const submitComment = async (postId: number) => {
+    const content = (newComment[postId] || '').trim();
+    if (!content) return;
+
+    setPostingComment((prev) => ({ ...prev, [postId]: true }));
+    try {
+      const comment = await api.createForumComment(postId, content);
+      setComments((prev) => ({
+        ...prev,
+        [postId]: [...(prev[postId] || []), comment],
+      }));
+      setNewComment((prev) => ({ ...prev, [postId]: '' }));
+      // Update comment count on post
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.id === postId ? { ...p, comment_count: (p.comment_count || 0) + 1 } : p
+        )
+      );
+    } catch (err: any) {
+      console.error('Failed to post comment:', err);
+    } finally {
+      setPostingComment((prev) => ({ ...prev, [postId]: false }));
     }
   };
 
@@ -168,26 +217,84 @@ export default function ForumPage() {
           ) : (
             <div className="space-y-4">
               {posts.map((post) => (
-                <div
-                  key={post.id}
-                  className="bg-white rounded-xl border border-slate-200 p-6 hover:shadow-md transition cursor-pointer"
-                >
-                  <div className="flex items-start gap-4">
-                    <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
-                      <MessageSquare className="w-5 h-5 text-green-600" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h4 className="font-semibold text-slate-800 text-lg mb-2">{post.title}</h4>
-                      <p className="text-slate-600 mb-3 line-clamp-2">{post.content}</p>
-                      <div className="flex items-center gap-4 text-sm text-slate-500">
-                        <span>{new Date(post.created_at).toLocaleDateString()}</span>
-                        <span>&bull;</span>
-                        <span>{post.author_name || 'Teacher'}</span>
-                        <span>&bull;</span>
-                        <span>Teacher Community</span>
+                <div key={post.id} className="bg-white rounded-xl border border-slate-200">
+                  <div className="p-6">
+                    <div className="flex items-start gap-4">
+                      <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+                        <MessageSquare className="w-5 h-5 text-green-600" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-semibold text-slate-800 text-lg mb-2">{post.title}</h4>
+                        <p className="text-slate-600 mb-3">{post.content}</p>
+                        <div className="flex items-center gap-4 text-sm text-slate-500">
+                          <span>{new Date(post.created_at).toLocaleDateString()}</span>
+                          <span>&bull;</span>
+                          <span>{post.author_name || 'Teacher'}</span>
+                          <span>&bull;</span>
+                          <button
+                            onClick={() => void toggleComments(post.id)}
+                            className="flex items-center gap-1 text-green-600 hover:text-green-700 font-medium transition"
+                          >
+                            <MessageSquare className="w-4 h-4" />
+                            {post.comment_count ?? 0} comment{(post.comment_count ?? 0) !== 1 ? 's' : ''}
+                            {expandedPostId === post.id
+                              ? <ChevronUp className="w-4 h-4" />
+                              : <ChevronDown className="w-4 h-4" />}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
+
+                  {expandedPostId === post.id && (
+                    <div className="border-t border-slate-100 px-6 pb-6 pt-4 space-y-4">
+                      {loadingComments[post.id] ? (
+                        <p className="text-sm text-slate-500">Loading comments...</p>
+                      ) : (
+                        <div className="space-y-3">
+                          {(comments[post.id] || []).length === 0 ? (
+                            <p className="text-sm text-slate-400">No comments yet. Be the first to reply.</p>
+                          ) : (
+                            (comments[post.id] || []).map((comment) => (
+                              <div key={comment.id} className="bg-slate-50 rounded-lg p-3">
+                                <p className="text-sm text-slate-800">{comment.content}</p>
+                                <p className="text-xs text-slate-500 mt-1">
+                                  {comment.author_name || 'Teacher'} &bull;{' '}
+                                  {new Date(comment.created_at).toLocaleDateString()}
+                                </p>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      )}
+
+                      <div className="flex gap-2 pt-2">
+                        <input
+                          type="text"
+                          value={newComment[post.id] || ''}
+                          onChange={(e) =>
+                            setNewComment((prev) => ({ ...prev, [post.id]: e.target.value }))
+                          }
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault();
+                              void submitComment(post.id);
+                            }
+                          }}
+                          placeholder="Add a comment..."
+                          maxLength={2000}
+                          className="flex-1 px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition"
+                        />
+                        <button
+                          onClick={() => void submitComment(post.id)}
+                          disabled={postingComment[post.id] || !(newComment[post.id] || '').trim()}
+                          className="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <Send className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

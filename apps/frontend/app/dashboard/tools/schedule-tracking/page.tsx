@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import { LearnerProfile, LearnerScheduleItem } from '@/types/database';
-import { AlertCircle, ArrowLeft, Calendar, Clock3, Plus, Trash2, Users } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Calendar, Check, Clock3, Pencil, Plus, Trash2, Users, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { getLearnerDisplayName } from '@/lib/learners';
@@ -22,6 +22,10 @@ export default function ScheduleTrackingPage() {
   const [loadingSchedule, setLoadingSchedule] = useState(false);
   const [savingItem, setSavingItem] = useState(false);
   const [error, setError] = useState('');
+  // TC-SCH-004: inline edit state
+  const [editingItemId, setEditingItemId] = useState<number | null>(null);
+  const [editDraft, setEditDraft] = useState({ title: '', time: '', notes: '' });
+  const [savingEdit, setSavingEdit] = useState(false);
   const [calendarConnected, setCalendarConnected] = useState(false);
   const [calendarEmail, setCalendarEmail] = useState<string | null>(null);
   const [syncNotice, setSyncNotice] = useState('');
@@ -165,6 +169,43 @@ export default function ScheduleTrackingPage() {
           ? requestError.message
           : 'Failed to delete the schedule item.',
       );
+    }
+  };
+
+  const startEditItem = (item: LearnerScheduleItem) => {
+    setEditingItemId(item.id);
+    setEditDraft({ title: item.title, time: item.start_time, notes: item.notes || '' });
+  };
+
+  const cancelEdit = () => {
+    setEditingItemId(null);
+    setEditDraft({ title: '', time: '', notes: '' });
+  };
+
+  const saveEditItem = async (itemId: number) => {
+    if (!editDraft.title.trim() || !editDraft.time.trim()) return;
+    setSavingEdit(true);
+    setError('');
+    try {
+      const updated = await api.updateScheduleItem(itemId, {
+        title: editDraft.title.trim(),
+        start_time: editDraft.time.trim(),
+        notes: editDraft.notes.trim(),
+      });
+      setScheduleItems((current) =>
+        current
+          .map((item) => (item.id === itemId ? updated : item))
+          .sort((a, b) => a.start_time.localeCompare(b.start_time)),
+      );
+      setEditingItemId(null);
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : 'Failed to update the schedule item.',
+      );
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -361,28 +402,85 @@ export default function ScheduleTrackingPage() {
                     key={item.id}
                     className="border border-slate-200 rounded-lg p-4 hover:shadow-sm transition"
                   >
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <h4 className="font-medium text-slate-800">{item.title}</h4>
-                        {item.notes && (
-                          <p className="text-sm text-slate-600 mt-1">{item.notes}</p>
-                        )}
+                    {editingItemId === item.id ? (
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-2 gap-3">
+                          <input
+                            type="text"
+                            value={editDraft.title}
+                            onChange={(e) => setEditDraft((d) => ({ ...d, title: e.target.value }))}
+                            className="col-span-2 px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none"
+                            placeholder="Activity title"
+                            maxLength={160}
+                          />
+                          <input
+                            type="time"
+                            value={editDraft.time}
+                            onChange={(e) => setEditDraft((d) => ({ ...d, time: e.target.value }))}
+                            className="px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none"
+                          />
+                          <input
+                            type="text"
+                            value={editDraft.notes}
+                            onChange={(e) => setEditDraft((d) => ({ ...d, notes: e.target.value }))}
+                            className="px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none"
+                            placeholder="Notes (optional)"
+                            maxLength={1000}
+                          />
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void saveEditItem(item.id)}
+                            disabled={savingEdit || !editDraft.title.trim() || !editDraft.time.trim()}
+                            className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg disabled:opacity-50 transition"
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                            {savingEdit ? 'Saving…' : 'Save'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={cancelEdit}
+                            className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50 transition"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                            Cancel
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-purple-700 bg-purple-50 px-3 py-1 rounded-full">
-                          {item.start_time}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => void deleteScheduleItem(item.id)}
-                          className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-red-50 hover:text-red-600"
-                          aria-label={`Delete ${item.title}`}
-                          title="Delete schedule item"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                    ) : (
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <h4 className="font-medium text-slate-800">{item.title}</h4>
+                          {item.notes && (
+                            <p className="text-sm text-slate-600 mt-1">{item.notes}</p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-purple-700 bg-purple-50 px-3 py-1 rounded-full">
+                            {item.start_time}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => startEditItem(item)}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-purple-50 hover:text-purple-600"
+                            aria-label={`Edit ${item.title}`}
+                            title="Edit schedule item"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void deleteScheduleItem(item.id)}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-red-50 hover:text-red-600"
+                            aria-label={`Delete ${item.title}`}
+                            title="Delete schedule item"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
                 ))}
               </div>
