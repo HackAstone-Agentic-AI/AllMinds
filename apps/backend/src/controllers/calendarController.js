@@ -222,7 +222,18 @@ async function getValidAccessToken(userId) {
 // POST /api/calendar/events — create an event on the user's primary calendar.
 // Accepts { title, start_time: "HH:MM", notes?, date?: "YYYY-MM-DD", duration_minutes? }.
 const createCalendarEvent = async (req, res) => {
-    const { title, start_time, notes, date, duration_minutes } = req.body || {};
+    const { title, start_time, notes, date, duration_minutes, recurrence = 'none' } = req.body || {};
+    const RECURRENCE_RULES = {
+        none: null,
+        weekdays: 'RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
+        daily: 'RRULE:FREQ=DAILY',
+    };
+    if (!Object.prototype.hasOwnProperty.call(RECURRENCE_RULES, recurrence)) {
+        return res.status(400).json({ error: "recurrence must be 'none', 'weekdays' or 'daily'." });
+    }
+    if (date !== undefined && date !== null && date !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return res.status(400).json({ error: 'date must use YYYY-MM-DD format.' });
+    }
     const summary = typeof title === 'string' ? title.trim() : '';
     const time = typeof start_time === 'string' ? start_time.trim() : '';
 
@@ -254,6 +265,7 @@ const createCalendarEvent = async (req, res) => {
             // No UTC offset needed because timeZone is supplied explicitly
             start: { dateTime: `${eventDate}T${time}:00`, timeZone: APP_TIMEZONE },
             end: { dateTime: `${eventDate}T${endTime}:00`, timeZone: APP_TIMEZONE },
+            ...(RECURRENCE_RULES[recurrence] ? { recurrence: [RECURRENCE_RULES[recurrence]] } : {}),
         };
 
         const { statusCode, body } = await httpsPostJson(GOOGLE_EVENTS_URL, accessToken, event);

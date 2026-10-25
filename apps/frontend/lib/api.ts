@@ -77,10 +77,17 @@ export const api = {
     notes?: string;
     date?: string;
     duration_minutes?: number;
+    recurrence?: 'none' | 'weekdays' | 'daily';
   }) => request('/calendar/events', { method: 'POST', body: JSON.stringify(data) }),
 
   // Learners
   getLearners: () => request('/learners'),
+  getAttentionList: () => request('/learners/attention'),
+
+  // Demo classroom and impact
+  loadDemoClassroom: () => request('/demo/classroom', { method: 'POST' }),
+  removeDemoClassroom: () => request('/demo/classroom', { method: 'DELETE' }),
+  getImpactStats: () => request('/stats/impact'),
   createLearner: (data: any) => request('/learners', { method: 'POST', body: JSON.stringify(data) }),
   bulkUploadLearners: (learners: any[]) =>
     request('/learners/bulk', { method: 'POST', body: JSON.stringify({ learners }) }),
@@ -143,9 +150,78 @@ createProgress: (learnerId: number, data: any) =>
     const query = params ? '?' + new URLSearchParams(params) : '';
     return request(`/ngos${query}`);
   },
-  getStrategies: () => request('/strategies'),
+  getTrainingResources: () => request('/ngos/training'),
+  submitNgoReview: (id: number, rating: number, comment: string) =>
+    request(`/ngos/${id}/review`, { method: 'POST', body: JSON.stringify({ rating, comment }) }),
+  reportNgo: (id: number, issue: string) =>
+    request(`/ngos/${id}/report`, { method: 'POST', body: JSON.stringify({ issue }) }),
+  getStrategies: (params?: Record<string, string>) => {
+    const query = params ? '?' + new URLSearchParams(params) : '';
+    return request(`/strategies${query}`);
+  },
   createStrategy: (data: any) => request('/strategies', { method: 'POST', body: JSON.stringify(data) }),
   voteStrategy: (id: number) => request(`/strategies/${id}/vote`, { method: 'POST' }),
+
+  // Thandi memory (Next.js proxy -> Express -> agents)
+  getAgentMemory: async () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('allminds_token') : null;
+    const res = await fetch('/api/agent/memory', {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error('Could not load chat history');
+    return res.json() as Promise<{ turns: { role: 'user' | 'assistant'; content: string }[]; facts: string[] }>;
+  },
+  clearAgentMemory: async () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('allminds_token') : null;
+    const res = await fetch('/api/agent/memory', {
+      method: 'DELETE',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error('Could not clear chat memory');
+  },
+
+  // Streams Thandi's reply: onToken receives text as it is written; resolves with the final payload.
+  streamChatWithAgent: async (
+    message: string,
+    data: Record<string, unknown>,
+    onToken: (text: string) => void,
+    signal?: AbortSignal,
+  ) => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('allminds_token') : null;
+    const res = await fetch('/api/agent/chat/stream', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ message, ...data }),
+      signal,
+    });
+    if (!res.ok || !res.body) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || err.detail || 'Agent request failed');
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let done: Record<string, any> | null = null;
+    for (;;) {
+      const { value, done: finished } = await reader.read();
+      if (finished) break;
+      buffer += decoder.decode(value, { stream: true });
+      const events = buffer.split('\n\n');
+      buffer = events.pop() || '';
+      for (const raw of events) {
+        const line = raw.trim();
+        if (!line.startsWith('data:')) continue;
+        const event = JSON.parse(line.slice(5).trim());
+        if (event.type === 'token') onToken(event.text);
+        else if (event.type === 'done') done = event;
+      }
+    }
+    if (!done) throw new Error('The reply was interrupted. Please try again.');
+    return done;
+  },
 
   // Agentic AI — calls the Next.js proxy route, not the Express backend
   chatWithAgent: async (message: string, data?: Record<string, unknown>) => {

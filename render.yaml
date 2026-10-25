@@ -70,9 +70,15 @@ services:
     rootDir: apps/agents
     plan: pro
     region: frankfurt
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.api.index:app --host 0.0.0.0 --port $PORT
+    # Build the DCAPS vector index during the build so the first question is fast.
+    buildCommand: pip install -r requirements.txt && python -m app.agents.rag_agent build
+    startCommand: uvicorn app.api.index:app --host 0.0.0.0 --port $PORT --workers 2
     healthCheckPath: /health
+    # Persistent disk so Thandi's conversation memory survives deploys.
+    disk:
+      name: agents-data
+      mountPath: /var/data
+      sizeGB: 1
     envVars:
       - key: ENVIRONMENT
         value: production
@@ -96,6 +102,8 @@ services:
         sync: false
       - key: YOUTUBE_API_KEY
         sync: false
+      - key: MEMORY_DB_PATH
+        value: /var/data/thandi_memory.sqlite
 
   - type: web
     runtime: node

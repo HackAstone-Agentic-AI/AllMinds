@@ -209,6 +209,27 @@ def check_input(text: str) -> GuardrailResult:
     return GuardrailResult(blocked=False, cleaned=cleaned)
 
 
+def check_structured(text: str) -> GuardrailResult:
+    """
+    Guard free text that arrives in structured fields (learner context, names, notes).
+    Same injection/harm checks as check_input, without the chat length limit, and PII
+    is scrubbed so it never reaches a model.
+    """
+    if not text:
+        return GuardrailResult(blocked=False, cleaned="")
+    if _is_injection(text):
+        return GuardrailResult(
+            blocked=True,
+            reason="Learner context contains content that looks like a prompt injection attempt.",
+        )
+    if _is_harmful(text) or _is_offtopic_abuse(text):
+        return GuardrailResult(
+            blocked=True,
+            reason="Learner context contains content this assistant cannot process.",
+        )
+    return GuardrailResult(blocked=False, cleaned=scrub_pii(text))
+
+
 def check_output(text: str) -> str:
     """
     Sanitise agent output before returning it to the caller.

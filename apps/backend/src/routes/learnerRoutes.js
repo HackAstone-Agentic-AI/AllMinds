@@ -8,6 +8,7 @@ const {
     createSensoryLog,
     getProgress,
     createProgress,
+    getAttentionList,
 } = require('../controllers/learnerController');
 
 const router = express.Router();
@@ -17,6 +18,7 @@ router.use(authenticateToken);
 
 // Learner CRUD
 router.get('/', getLearners);
+router.get('/attention', getAttentionList);
 router.post('/', createLearner);
 router.post('/bulk', bulkCreateLearners);
 

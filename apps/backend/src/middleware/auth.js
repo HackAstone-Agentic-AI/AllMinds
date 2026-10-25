@@ -30,4 +30,19 @@ const authorizeAdmin = (req, res, next) => {
     next();
 };
 
-module.exports = { authenticateToken, authorizeAdmin };
+// Attaches req.user when a valid token is present, but never rejects the request.
+// Used by public lists that show extra state (e.g. "you voted") to signed-in teachers.
+const optionalAuth = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (token) {
+        try {
+            req.user = jwt.verify(token, process.env.JWT_SECRET);
+        } catch {
+            // Invalid or expired tokens are treated as anonymous here.
+        }
+    }
+    next();
+};
+
+module.exports = { authenticateToken, authorizeAdmin, optionalAuth };

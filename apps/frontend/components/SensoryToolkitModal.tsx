@@ -27,6 +27,7 @@ export default function SensoryToolkitModal({
     notes: '',
   });
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
   const loadLogs = useCallback(async () => {
     try {
@@ -34,6 +35,7 @@ export default function SensoryToolkitModal({
       setLogs(data);
     } catch (err) {
       console.error('Failed to load sensory logs:', err);
+      setError(err instanceof Error ? err.message : 'Could not load observations.');
     }
   }, [learner.id]);
 
@@ -44,6 +46,7 @@ export default function SensoryToolkitModal({
   const handleSaveLog = async () => {
     if (!newLog.behavior.trim()) return;
     setSaving(true);
+    setError('');
     try {
       await api.createSensoryLog(learner.id, {
         behavior: newLog.behavior,
@@ -56,6 +59,7 @@ export default function SensoryToolkitModal({
       onUpdate();
     } catch (err) {
       console.error('Failed to save log:', err);
+      setError(err instanceof Error ? err.message : 'Could not save this observation.');
     } finally {
       setSaving(false);
     }
@@ -76,6 +80,9 @@ export default function SensoryToolkitModal({
         </div>
 
         <div className="p-6 space-y-6">
+          {error && (
+            <p role="alert" className="text-sm text-red-700 bg-red-50 rounded-lg px-3 py-2">{error}</p>
+          )}
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
             <h3 className="font-semibold text-amber-900 mb-2">About Sensory Toolkit</h3>
             <p className="text-sm text-amber-800">

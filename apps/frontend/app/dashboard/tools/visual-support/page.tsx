@@ -5,6 +5,7 @@ import DashboardLayout from '@/components/DashboardLayout';
 import { AlertCircle, ArrowLeft, Download, ExternalLink, Eye, Image as ImageIcon, Info, MessageSquare, Send, Sparkles, User } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
+import AiProgress from '@/components/AiProgress';
 
 interface TeacherProfileSummary {
   id: number;
@@ -284,7 +285,17 @@ export default function VisualSupportPage() {
                 <Send className="w-5 h-5" />
               </button>
             </div>
-            {isSending && <p className="mt-3 text-sm text-slate-500">Generating support...</p>}
+            <div className="mt-3">
+              <AiProgress
+                active={isSending}
+                note="Usually 10-35 seconds."
+                steps={[
+                  { label: 'Designing visual supports', at: 0 },
+                  { label: 'Creating picture cards with Gemini', at: 5 },
+                  { label: 'Finding short videos', at: 12 },
+                ]}
+              />
+            </div>
           </div>
 
           <div className="space-y-6">

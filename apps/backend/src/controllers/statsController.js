@@ -118,4 +118,46 @@ async function getSchoolIdByAdmin(adminId) {
     return result.rows[0]?.id;
 }
 
-module.exports = { getAdminStats, getTeacherStats };
+// Minutes a teacher would typically spend producing each artefact by hand. Shown in the
+// UI as stated assumptions, not measurements.
+const MINUTES_SAVED = { lesson: 45, support: 30, parent: 20, visual: 20, multimodal: 15, rag: 10, ngo: 10 };
+const DEFAULT_MINUTES = 5;
+
+const getImpactStats = async (req, res) => {
+    const teacherId = req.user.id;
+    try {
+        const [usage, languages, learners, records] = await Promise.all([
+            pool.query(
+                'SELECT tool, COUNT(*)::int AS n FROM ai_usage WHERE teacher_id = $1 GROUP BY tool',
+                [teacherId]
+            ),
+            pool.query(
+                'SELECT DISTINCT language_pref FROM ai_usage WHERE teacher_id = $1 ORDER BY language_pref',
+                [teacherId]
+            ),
+            pool.query('SELECT COUNT(*)::int AS n FROM learner_profiles WHERE teacher_id = $1', [teacherId]),
+            pool.query('SELECT COUNT(*)::int AS n FROM learner_progress WHERE teacher_id = $1', [teacherId]),
+        ]);
+        const byTool = Object.fromEntries(usage.rows.map((row) => [row.tool, row.n]));
+        const minutes = usage.rows.reduce(
+            (sum, row) => sum + row.n * (MINUTES_SAVED[row.tool] ?? DEFAULT_MINUTES), 0
+        );
+        res.json({
+            learnersSupported: learners.rows[0].n,
+            progressRecords: records.rows[0].n,
+            lessonPlans: byTool.lesson || 0,
+            supportPlans: byTool.support || 0,
+            parentLetters: byTool.parent || 0,
+            visualSupports: byTool.visual || 0,
+            aiRequests: usage.rows.reduce((sum, row) => sum + row.n, 0),
+            languagesUsed: languages.rows.map((row) => row.language_pref),
+            hoursSaved: Math.round((minutes / 60) * 10) / 10,
+            assumptions: MINUTES_SAVED,
+        });
+    } catch (error) {
+        console.error('Get impact stats error:', error);
+        res.status(500).json({ error: 'Failed to fetch impact stats' });
+    }
+};
+
+module.exports = { getAdminStats, getTeacherStats, getImpactStats };

@@ -21,7 +21,7 @@ import {
 import SettingsPanel, { SettingsSection } from './SettingsPanel';
 import AgentChat from './AgentChat';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
-import { LANGUAGES } from '@/lib/i18n/translations';
+import { LANGUAGES, uiCoverage } from '@/lib/i18n/translations';
 import { ThemePreference, usePreferences } from '@/lib/preferences/PreferencesContext';
 
 interface DashboardLayoutProps {
@@ -314,7 +314,7 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
                 </span>
               </button>
               {showLanguageMenu && (
-                <div className="absolute right-0 mt-2 max-h-80 w-48 overflow-y-auto rounded-lg border border-slate-200 bg-white py-2 shadow-lg">
+                <div className="absolute right-0 mt-2 max-h-80 w-64 overflow-y-auto rounded-lg border border-slate-200 bg-white py-2 shadow-lg">
                   {LANGUAGES.map((lang) => (
                     <button
                       key={lang.code}
@@ -329,6 +329,9 @@ export default function DashboardLayout({ children, activeTab }: DashboardLayout
                       }`}
                     >
                       {lang.label}
+                      {lang.code !== 'en' && uiCoverage(lang.code) < 0.9 && (
+                        <span className="block text-xs font-normal text-slate-400">AI replies; interface partly English</span>
+                      )}
                     </button>
                   ))}
                 </div>

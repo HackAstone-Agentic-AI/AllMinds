@@ -188,6 +188,28 @@ const af: Partial<TranslationMap> = {
   'common.loading': 'Laai…',
   'common.back': 'Terug',
   'common.download': 'Aflaai',
+  'dashboard.welcome': 'Welkom terug',
+  'dashboard.recentActivity': 'Onlangse aktiwiteit',
+  'dashboard.noActivity': 'Nog geen onlangse aktiwiteit nie.',
+  'dashboard.lessonPlans': 'Lesplanne',
+  'dashboard.noLessonPlans': 'Nog geen lesplanne gestoor nie.',
+  'dashboard.tasks': 'Take',
+  'tools.title': 'Onderrighulpmiddels',
+  'tools.subtitle': 'KI-hulpmiddels vir inklusiewe, neurodiversiteit-bevestigende klaskamers',
+  'tools.visualSupport': 'Visuele ondersteuning',
+  'tools.visualSupportDesc': 'Bou eenvoudige visuele ondersteuning vir neurodiverse leerders',
+  'tools.assessmentPlanner': 'Assessering- en Pedagogiese Beplanner',
+  'tools.assessmentPlannerDesc': 'Genereer inklusiewe lesplanne, werkkaarte, toetse en huiswerk',
+  'tools.scheduleTracking': 'Skedule en opvolging',
+  'tools.scheduleTrackingDesc': 'Skep visuele skedules en volg leerders se vordering',
+  'planner.supportNeed': 'Spesifieke ondersteuningsbehoefte',
+  'planner.generatedPlan': 'Gegenereerde plan',
+  'planner.noplan': 'Nog geen plan gegenereer nie',
+  'planner.saveSuccess': 'Plan gestoor. Dit sal onder Lesplanne op jou kontroleskerm verskyn.',
+  'planner.videoResources': 'Video-hulpbronne',
+  'planner.visualAids': 'KI-visuele hulpmiddels',
+  'common.error': 'Iets het fout gegaan. Probeer asseblief weer.',
+  'common.export': 'Voer uit',
 };
 
 const zu: Partial<TranslationMap> = {
@@ -251,3 +273,16 @@ export const translations: Record<LanguageCode, Partial<TranslationMap>> & { en:
   ve,
   ts,
 };
+
+// Share of interface strings translated for a language (English fills the gaps).
+// AI replies are generated in every language regardless of this figure.
+export function uiCoverage(code: LanguageCode): number {
+  const total = Object.keys(en).length;
+  const done = Object.keys(translations[code] || {}).filter((key) => key in en).length;
+  return total === 0 ? 1 : Math.min(1, done / total);
+}
+
+export function languageOptionLabel(code: LanguageCode, label: string): string {
+  if (code === 'en') return label;
+  return uiCoverage(code) >= 0.9 ? label : `${label} (AI replies; interface partly English)`;
+}

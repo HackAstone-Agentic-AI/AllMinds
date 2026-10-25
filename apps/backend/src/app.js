@@ -14,7 +14,8 @@ const passport = require('./config/passport');
 // OAuth and password-reset routes carry their own limiters in their route files
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 20,
+    // Overridable so automated test suites that register many users are not throttled.
+    max: Number(process.env.AUTH_RATE_LIMIT_MAX) || 20,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many requests from this IP, please try again after 15 minutes.' },
@@ -80,6 +81,7 @@ app.use('/api/school', schoolRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/agent', agentRoutes);
 app.use('/api/calendar', calendarRoutes);
+app.use('/api/demo', require('./routes/demoRoutes'));
 
 // Health check
 app.get('/api/health', (req, res) => {

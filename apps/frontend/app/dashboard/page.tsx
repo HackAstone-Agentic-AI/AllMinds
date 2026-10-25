@@ -18,6 +18,8 @@ import {
   X,
 } from 'lucide-react';
 import DashboardLayout from '@/components/DashboardLayout';
+import LoadError from '@/components/LoadError';
+import DashboardInsights from '@/components/DashboardInsights';
 import { api } from '@/lib/api';
 import {
   Activity,
@@ -76,6 +78,7 @@ const getLessonTitle = (plan: LessonPlan) => plan.title || 'Untitled lesson plan
 
 export default function DashboardHome() {
   const [learnerProfiles, setLearnerProfiles] = useState<LearnerProfile[]>([]);
+  const [loadError, setLoadError] = useState('');
   const [lessonPlans, setLessonPlans] = useState<LessonPlan[]>([]);
   const [parentCommunications, setParentCommunications] = useState<ParentCommunication[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
@@ -94,6 +97,7 @@ export default function DashboardHome() {
   const router = useRouter();
 
   const loadDashboardData = useCallback(async () => {
+    setLoadError('');
     const token = localStorage.getItem('allminds_token');
     if (!token) {
       router.push('/login');
@@ -118,6 +122,7 @@ export default function DashboardHome() {
       setTasks(teacherTasks);
     } catch (error) {
       console.error('Failed to load dashboard:', error);
+      setLoadError(error instanceof Error ? error.message : 'Please try again.');
     } finally {
       setLoading(false);
     }
@@ -343,6 +348,7 @@ export default function DashboardHome() {
   return (
     <DashboardLayout activeTab="home">
       <div className="space-y-6">
+        <LoadError message={loadError} onRetry={() => void loadDashboardData()} />
         <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-sm font-semibold text-[#087d8c]">Teacher overview</p>
@@ -359,6 +365,14 @@ export default function DashboardHome() {
             <ChevronRight className="h-4 w-4" />
           </Link>
         </header>
+
+        {!loading && (
+          <DashboardInsights
+            hasLearners={learnerProfiles.length > 0}
+            hasDemo={learnerProfiles.some((learner) => learner.anonymous_id.startsWith('DEMO-'))}
+            onChanged={() => void loadDashboardData()}
+          />
+        )}
 
         <section
           className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3"

@@ -1,42 +1,16 @@
 import os
 import re
 import statistics
-import textwrap
 from datetime import datetime
 from typing import Any
 from app.core.language import resolve_language_code, SA_LANGUAGES
-
-
-def _safe_filename(name: str) -> str:
-    """Return a filename-safe slug: alphanumeric + hyphen + underscore only, max 60 chars."""
-    slug = re.sub(r"[^\w\-]", "_", name).strip("_")
-    return slug[:60] or "learner"
 
 
 def _safe_label(name: str) -> str:
     """Strip control characters and Unicode line terminators before embedding in text or LLM prompts."""
     return re.sub(r"[\r\n\t\x00-\x1f\x7f\x85  ]", " ", name).strip()[:80] or "this learner"
 
-try:
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    import matplotlib.patches as mpatches
-except ImportError:
-    matplotlib = None
-    plt = None
-    mpatches = None
-
-PALETTE = {
-    "mark": "#4A90D9",
-    "behavior": "#F5A623",
-    "progress": "#7ED321",
-    "bar": "#5B8DB8",
-    "risk": "#E8834A",
-    "bg": "#F9F7F4",
-    "text": "#2C2C2C",
-    "grid": "#E0DDD8",
-}
+MIN_RECORDS_FOR_TREND = 3
 
 
 def is_analytics_request(user_input: str, records: list | None = None) -> bool:
@@ -122,7 +96,9 @@ def weighted_progress_score(mark_score: float, behavior_score: float) -> float:
 def subject_breakdown(cleaned: list[dict[str, Any]]) -> list[dict[str, Any]]:
     subjects: dict[str, list[float]] = {}
     for row in cleaned:
-        subjects.setdefault(row["subject"], []).append(row["mark"])
+        # Fall back to the progress score when a record has no mark for that subject.
+        value = row["mark"] if row["mark"] is not None else row["progress_score"]
+        subjects.setdefault(row["subject"], []).append(value)
     return sorted(
         [
             {"subject": subject, "average_mark": round(statistics.mean(marks), 2)}
@@ -132,140 +108,6 @@ def subject_breakdown(cleaned: list[dict[str, Any]]) -> list[dict[str, Any]]:
     )
 
 
-def build_charts(learner_name: str, cleaned: list[dict], summary: dict, risk_flags: list[str]) -> dict[str, str]:
-    if matplotlib is None or plt is None or mpatches is None:
-        return {}
-
-    learner_name = _safe_label(learner_name)
-    output_dir = "charts"
-    os.makedirs(output_dir, exist_ok=True)
-    chart_paths = {}
-
-    dates = [row["date"] for row in cleaned]
-    x = range(len(dates))
-
-    fig1, ax1 = plt.subplots(figsize=(10, 5), facecolor=PALETTE["bg"])
-    ax1.set_facecolor(PALETTE["bg"])
-    ax1.grid(color=PALETTE["grid"], linestyle="--", linewidth=0.7, zorder=0)
-
-    ax1.plot(
-        x,
-        [row["mark"] for row in cleaned],
-        color=PALETTE["mark"],
-        marker="o",
-        linewidth=2,
-        label="Academic Mark (%)",
-        zorder=3,
-    )
-    ax1.plot(
-        x,
-        [row["behavior_score"] for row in cleaned],
-        color=PALETTE["behavior"],
-        marker="s",
-        linewidth=2,
-        label="Behaviour Score (%)",
-        zorder=3,
-    )
-    ax1.plot(
-        x,
-        [row["progress_score"] for row in cleaned],
-        color=PALETTE["progress"],
-        marker="^",
-        linewidth=2,
-        label="Overall Progress (%)",
-        zorder=3,
-    )
-
-    ax1.set_xticks(list(x))
-    ax1.set_xticklabels(dates, rotation=35, ha="right", fontsize=9, color=PALETTE["text"])
-    ax1.set_yticks(range(0, 101, 10))
-    ax1.set_ylim(0, 110)
-    ax1.set_ylabel("Score (%)", color=PALETTE["text"], fontsize=10)
-    ax1.set_xlabel("Session Date", color=PALETTE["text"], fontsize=10)
-    ax1.tick_params(colors=PALETTE["text"])
-    for spine in ax1.spines.values():
-        spine.set_edgecolor(PALETTE["grid"])
-
-    title1 = textwrap.fill(f"{learner_name} - Progress Over Time", width=55)
-    ax1.set_title(title1, color=PALETTE["text"], fontsize=13, fontweight="bold", pad=12)
-    ax1.legend(loc="lower right", framealpha=0.85, fontsize=9)
-
-    trend_color = {
-        "improving": PALETTE["progress"],
-        "declining": PALETTE["risk"],
-        "stable": PALETTE["behavior"],
-    }[summary["overall_trend"]]
-    ax1.annotate(
-        f"Overall trend: {summary['overall_trend'].upper()}",
-        xy=(0.01, 0.96),
-        xycoords="axes fraction",
-        fontsize=9,
-        color=trend_color,
-        fontweight="bold",
-    )
-
-    fig1.tight_layout()
-    path1 = os.path.join(output_dir, f"{_safe_filename(learner_name)}_progress_over_time.png")
-    fig1.savefig(path1, dpi=150, bbox_inches="tight")
-    plt.close(fig1)
-    chart_paths["line_progress_over_time"] = path1
-
-    breakdown = subject_breakdown(cleaned)
-    subjects = [item["subject"] for item in breakdown]
-    averages = [item["average_mark"] for item in breakdown]
-
-    fig2, ax2 = plt.subplots(figsize=(max(6, len(subjects) * 1.4), 5), facecolor=PALETTE["bg"])
-    ax2.set_facecolor(PALETTE["bg"])
-    ax2.grid(axis="y", color=PALETTE["grid"], linestyle="--", linewidth=0.7, zorder=0)
-
-    bars = ax2.bar(
-        subjects,
-        averages,
-        color=PALETTE["bar"],
-        edgecolor="white",
-        linewidth=0.8,
-        zorder=3,
-        width=0.55,
-    )
-
-    for bar, value in zip(bars, averages):
-        ax2.text(
-            bar.get_x() + bar.get_width() / 2,
-            bar.get_height() + 1.5,
-            f"{value:.1f}%",
-            ha="center",
-            va="bottom",
-            fontsize=9,
-            color=PALETTE["text"],
-            fontweight="bold",
-        )
-
-    ax2.axhline(50, color=PALETTE["risk"], linestyle=":", linewidth=1.5, zorder=2)
-    ax2.annotate("Support threshold (50%)", xy=(len(subjects) - 0.5, 51.5), fontsize=8, color=PALETTE["risk"], ha="right")
-
-    ax2.set_ylim(0, 110)
-    ax2.set_ylabel("Average Mark (%)", color=PALETTE["text"], fontsize=10)
-    ax2.set_xlabel("Subject", color=PALETTE["text"], fontsize=10)
-    ax2.tick_params(colors=PALETTE["text"])
-    for spine in ax2.spines.values():
-        spine.set_edgecolor(PALETTE["grid"])
-
-    title2 = textwrap.fill(f"{learner_name} - Average Mark by Subject", width=55)
-    ax2.set_title(title2, color=PALETTE["text"], fontsize=13, fontweight="bold", pad=12)
-
-    if risk_flags:
-        patch = mpatches.Patch(color=PALETTE["risk"], label="! " + " | ".join(risk_flags))
-        ax2.legend(handles=[patch], loc="upper right", framealpha=0.85, fontsize=8)
-
-    fig2.tight_layout()
-    path2 = os.path.join(output_dir, f"{_safe_filename(learner_name)}_subject_averages.png")
-    fig2.savefig(path2, dpi=150, bbox_inches="tight")
-    plt.close(fig2)
-    chart_paths["bar_subject_average_marks"] = path2
-
-    return chart_paths
-
-
 def generate_narrative(learner_name: str, summary: dict, risk_flags: list[str], breakdown: list[dict]) -> str:
     learner_name = _safe_label(learner_name)
     strongest_subject = max(breakdown, key=lambda item: item["average_mark"], default=None)
@@ -273,7 +115,8 @@ def generate_narrative(learner_name: str, summary: dict, risk_flags: list[str], 
 
     sentences = [
         (
-            f"{learner_name} is showing a {summary['overall_trend']} overall pattern, "
+            f"{learner_name} is showing {'an' if summary['overall_trend'][0] in 'aeiou' else 'a'} "
+            f"{summary['overall_trend']} overall pattern, "
             f"with an average progress score of {summary['average_progress']}%."
         )
     ]
@@ -343,22 +186,25 @@ def run_analytics_automation(user_input: str, learner_name: str = "", records: l
             "output": "No learner records were provided for analysis.",
             "narrative": "",
             "analytics": {},
-            "chart_paths": {},
             "risk_flags": [],
             "status": "no_input",
         }
 
     cleaned = []
     for row in rows:
-        mark = safe_float(row.get("mark", 0))
+        # A missing mark is "not assessed", not zero, so it must not drag averages down.
+        has_mark = row.get("mark") not in (None, "")
+        mark = safe_float(row.get("mark")) if has_mark else None
         behavior_score = normalize_behavior_score(row.get("behavior", {}))
-        progress_score = weighted_progress_score(mark, behavior_score)
+        progress_score = (
+            weighted_progress_score(mark, behavior_score) if mark is not None else behavior_score
+        )
         cleaned.append(
             {
                 "date": row.get("date", ""),
                 "date_obj": parse_date(row.get("date", "")),
                 "subject": row.get("subject", "General"),
-                "mark": round(mark, 2),
+                "mark": round(mark, 2) if mark is not None else None,
                 "behavior_score": behavior_score,
                 "progress_score": progress_score,
             }
@@ -366,12 +212,13 @@ def run_analytics_automation(user_input: str, learner_name: str = "", records: l
 
     cleaned.sort(key=lambda item: (item["date_obj"] is None, item["date_obj"] or datetime.min))
 
-    marks = [item["mark"] for item in cleaned]
+    marks = [item["mark"] for item in cleaned if item["mark"] is not None]
     behavior_scores = [item["behavior_score"] for item in cleaned]
     progress_scores = [item["progress_score"] for item in cleaned]
 
     summary = {
-        "average_mark": round(statistics.mean(marks), 2),
+        "records": len(cleaned),
+        "average_mark": round(statistics.mean(marks), 2) if marks else None,
         "average_behavior": round(statistics.mean(behavior_scores), 2),
         "average_progress": round(statistics.mean(progress_scores), 2),
         "mark_trend": calculate_trend(marks),
@@ -380,7 +227,7 @@ def run_analytics_automation(user_input: str, learner_name: str = "", records: l
     }
 
     risk_flags = []
-    if summary["average_mark"] < 50:
+    if summary["average_mark"] is not None and summary["average_mark"] < 50:
         risk_flags.append("Academic performance needs additional support")
     if summary["average_behavior"] < 50:
         risk_flags.append("Behaviour/regulation support recommended")
@@ -401,12 +248,15 @@ def run_analytics_automation(user_input: str, learner_name: str = "", records: l
         "bar_subject_average_marks": subject_breakdown(cleaned),
     }
 
-    chart_paths = build_charts(learner, cleaned, summary, risk_flags)
     breakdown = subject_breakdown(cleaned)
     narrative = generate_narrative(learner, summary, risk_flags, breakdown)
 
+    mark_text = (
+        f"{learner}'s average mark is {summary['average_mark']}%"
+        if summary["average_mark"] is not None else f"No marks were recorded for {learner}"
+    )
     output = (
-        f"{learner}'s average mark is {summary['average_mark']}%, "
+        f"{mark_text}; "
         f"behaviour score is {summary['average_behavior']}%, "
         f"overall progress score is {summary['average_progress']}%. "
         f"Mark trend: {summary['mark_trend']}. "
@@ -415,6 +265,11 @@ def run_analytics_automation(user_input: str, learner_name: str = "", records: l
     )
     if risk_flags:
         output += " Risk flags: " + "; ".join(risk_flags) + "."
+    if len(cleaned) < MIN_RECORDS_FOR_TREND:
+        output += (
+            f" Only {len(cleaned)} record(s) so far: trends need at least "
+            f"{MIN_RECORDS_FOR_TREND} records to be reliable."
+        )
 
     output = _translate_analytics_text(output, language_pref)
     narrative = _translate_analytics_text(narrative, language_pref)
@@ -426,8 +281,8 @@ def run_analytics_automation(user_input: str, learner_name: str = "", records: l
             "summary": summary,
             "risk_flags": risk_flags,
             "charts": charts,
+            "narrative": narrative,
         },
-        "chart_paths": chart_paths,
         "risk_flags": risk_flags,
         "status": "ok",
         "topic": user_input,
