@@ -1,4 +1,5 @@
 const pool = require('../config/database');
+const { findPii, piiMessage } = require('../utils/pii');
 
 const getPosts = async (req, res) => {
     try {
@@ -23,6 +24,8 @@ const createPost = async (req, res) => {
     if (!title || !content) return res.status(400).json({ error: 'Title and content required' });
     if (title.length > 150) return res.status(400).json({ error: 'Title must be 150 characters or fewer' });
     if (content.length > 5000) return res.status(400).json({ error: 'Content must be 5000 characters or fewer' });
+    const pii = findPii(`${title}\n${content}`);
+    if (pii.length) return res.status(400).json({ error: piiMessage(pii) });
     try {
         const result = await pool.query(`
             INSERT INTO forum_posts (teacher_id, title, content)
@@ -68,6 +71,8 @@ const createComment = async (req, res) => {
     }
     if (!content) return res.status(400).json({ error: 'Comment content is required' });
     if (content.length > 2000) return res.status(400).json({ error: 'Comment must be 2000 characters or fewer' });
+    const pii = findPii(content);
+    if (pii.length) return res.status(400).json({ error: piiMessage(pii) });
 
     try {
         // Verify post exists

@@ -80,6 +80,7 @@ app.use('/api/school', schoolRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/agent', agentRoutes);
 app.use('/api/calendar', calendarRoutes);
+app.use('/api/demo', require('./routes/demoRoutes'));
 
 // Health check
 app.get('/api/health', (req, res) => {
