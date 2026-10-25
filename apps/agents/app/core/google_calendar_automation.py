@@ -1,12 +1,12 @@
 import os
-import re
-from datetime import datetime, timedelta
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 
+from app.core.event_parser import parse_event
 from app.core.calendar_token_store import (
     get_calendar_token,
     save_refreshed_calendar_token,
@@ -116,75 +116,6 @@ def is_calendar_request(user_input: str) -> bool:
     return explicit_calendar or is_schedule_query(text) or is_create_query(text)
 
 
-def clean_event_title(user_input: str) -> str:
-    prefixes = [
-        "schedule",
-        "book",
-        "create event",
-        "add event",
-        "set up",
-        "put this on my calendar",
-        "add this to my calendar",
-        "create calendar event",
-        "add to calendar",
-        "remind me to",
-        "remind me",
-    ]
-    title = user_input.strip()
-    lowered = title.lower()
-
-    for prefix in prefixes:
-        if lowered.startswith(prefix):
-            title = title[len(prefix):].strip(" :.-")
-            break
-
-    if not title:
-        title = "New calendar event"
-
-    return title[:120]
-
-
-def parse_event_time(user_input: str):
-    now = datetime.now(ZoneInfo(TIMEZONE))
-    start_dt = now + timedelta(hours=1)
-    start_dt = start_dt.replace(minute=0, second=0, microsecond=0)
-
-    text = user_input.lower()
-
-    if "tomorrow" in text:
-        start_dt = (now + timedelta(days=1)).replace(hour=9, minute=0, second=0, microsecond=0)
-    elif "today" in text:
-        start_dt = now.replace(hour=max(now.hour + 1, 9), minute=0, second=0, microsecond=0)
-
-    match = re.search(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b", text)
-    if match:
-        hour = int(match.group(1))
-        minute = int(match.group(2) or 0)
-        meridiem = match.group(3)
-
-        if meridiem == "pm" and hour != 12:
-            hour += 12
-        elif meridiem == "am" and hour == 12:
-            hour = 0
-
-        if 0 <= hour <= 23 and 0 <= minute <= 59:
-            start_dt = start_dt.replace(hour=hour, minute=minute)
-
-    duration_hours = 1
-    duration_match = re.search(r"\bfor\s+(\d+)\s*(hour|hours|hr|hrs|minute|minutes|min|mins)\b", text)
-    if duration_match:
-        amount = int(duration_match.group(1))
-        unit = duration_match.group(2)
-        if "min" in unit:
-            end_dt = start_dt + timedelta(minutes=amount)
-        else:
-            end_dt = start_dt + timedelta(hours=amount)
-        return start_dt, end_dt
-
-    end_dt = start_dt + timedelta(hours=duration_hours)
-    return start_dt, end_dt
-
-
 def list_upcoming_events(service, max_results: int = 5) -> str:
     now = datetime.now(ZoneInfo(TIMEZONE)).isoformat()
 
@@ -210,27 +141,30 @@ def list_upcoming_events(service, max_results: int = 5) -> str:
     return "\n".join(lines)
 
 
-def create_simple_event(service, user_input: str) -> str:
-    start_dt, end_dt = parse_event_time(user_input)
-
-    event = {
-        "summary": clean_event_title(user_input),
-        "start": {
-            "dateTime": start_dt.isoformat(),
-            "timeZone": TIMEZONE,
-        },
-        "end": {
-            "dateTime": end_dt.isoformat(),
-            "timeZone": TIMEZONE,
-        },
+def propose_event(user_input: str) -> dict:
+    """
+    Parse the request into an event and return it for the teacher to confirm in the UI.
+    Nothing is written to the calendar until they press Confirm, so a misread date or
+    time can be corrected first.
+    """
+    parsed = parse_event(user_input, datetime.now(ZoneInfo(TIMEZONE)))
+    if parsed.start is None:
+        return {
+            "output": (
+                f"What time should '{parsed.title}' start on {parsed.date.strftime('%A %d %B')}? "
+                "Try for example 'at 9am' or 'at 14:30'."
+            ),
+            "status": "needs_time",
+        }
+    day_text = parsed.date.strftime("%A %d %B %Y")
+    return {
+        "output": (
+            f"I can add '{parsed.title}' on {day_text} at {parsed.start} "
+            f"for {parsed.duration_minutes} minutes. Please confirm below."
+        ),
+        "status": "needs_confirmation",
+        "pending_action": {"type": "calendar_event", **parsed.as_dict()},
     }
-
-    created_event = service.events().insert(calendarId="primary", body=event).execute()
-
-    created_summary = created_event.get("summary", "Untitled event")
-    created_start = created_event["start"].get("dateTime", created_event["start"].get("date", "Unknown start"))
-
-    return f"Google Calendar event '{created_summary}' scheduled for {created_start}."
 
 
 def run_calendar_automation(user_input: str, thread_id: str) -> dict:
@@ -240,6 +174,11 @@ def run_calendar_automation(user_input: str, thread_id: str) -> dict:
             "output": "No input was provided.",
             "status": "no_input",
         }
+
+    # Creating an event only needs a proposal; the confirmed event is written by the
+    # backend's calendar endpoint, so no calendar connection is needed yet.
+    if is_create_query(text) and not is_schedule_query(text):
+        return propose_event(text)
 
     try:
         service = get_calendar_service(thread_id)
@@ -261,16 +200,10 @@ def run_calendar_automation(user_input: str, thread_id: str) -> dict:
                 "status": "ok",
             }
 
-        if is_create_query(text):
-            return {
-                "output": create_simple_event(service, text),
-                "status": "ok",
-            }
-
         return {
             "output": (
-                "I can create Google Calendar events or show upcoming events. "
-                "Try 'schedule a math lesson tomorrow at 9am' or 'what's on my calendar'."
+                "I can add Google Calendar events or show upcoming events. "
+                "Try 'schedule a maths lesson tomorrow at 9am' or 'what's on my calendar'."
             ),
             "status": "ok",
         }

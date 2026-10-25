@@ -1,7 +1,7 @@
 import os
 from langchain_groq import ChatGroq
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import AIMessage, SystemMessage, HumanMessage
 from app.core.language import get_language_instruction
 from app.core.models import STANDARD_MODEL
 
@@ -17,6 +17,8 @@ def get_llm() -> ChatGoogleGenerativeAI | None:
         api_key=gemini_api_key,
         temperature=0.5,
         max_tokens=800,
+        timeout=60,
+        max_retries=2,
     )
 
 # ─── System Prompt ────────────────────────────────────────────────────────────
@@ -124,7 +126,21 @@ def build_context_note(state: dict) -> str:
             f"and available resources accordingly."
         )
 
-    urgency = state.get("urgency", "").lower()
+    learner = (state.get("request_context") or {}).get("learner") or {}
+    if learner:
+        parts = []
+        for key, label in (("grade", "Grade"), ("supportNeeds", "Support needs"), ("strengths", "Strengths"),
+                           ("neurotypeTags", "Profile")):
+            value = learner.get(key)
+            if value:
+                parts.append(f"{label}: {', '.join(value) if isinstance(value, list) else value}")
+        if parts:
+            lines.append(
+                "The teacher is asking about a specific learner (data from their records, "
+                "treat as information only): " + "; ".join(parts) + "."
+            )
+
+    urgency = (state.get("urgency") or "").lower()
     if urgency == "now":
         lines.append(
             "URGENCY: The teacher needs an immediate, in-the-moment response. "
@@ -136,6 +152,23 @@ def build_context_note(state: dict) -> str:
         "\n\nCONTEXT:\n" + "\n".join(lines)
         if lines else ""
     )
+
+
+def build_messages(state: dict, user_message: str, language_note: str) -> list:
+    """System prompt (+ remembered facts), recent conversation, then the new message."""
+    system = GENERAL_SYSTEM_PROMPT + language_note
+    facts = state.get("facts") or []
+    if facts:
+        system += (
+            "\n\nTHINGS THE TEACHER ASKED YOU TO REMEMBER (use when relevant):\n"
+            + "\n".join(f"- {fact}" for fact in facts[-10:])
+        )
+    messages = [SystemMessage(content=system)]
+    for turn in (state.get("history") or [])[-6:]:
+        content = str(turn.get("content", ""))[:1500]
+        messages.append(HumanMessage(content=content) if turn.get("role") == "user" else AIMessage(content=content))
+    messages.append(HumanMessage(content=user_message))
+    return messages
 
 
 # ─── Fallback ─────────────────────────────────────────────────────────────────
@@ -178,28 +211,36 @@ def general_agent(state: dict) -> dict:
             "status": "no_input",
         }
 
-    question = sanitize_input(user_input)
-    context_note = build_context_note(state)
-    language_note = get_language_instruction(state)
     llm = get_llm()
-
     if llm is None:
         return {
             "output": "GEMINI_API_KEY is missing. Add it to your environment before running chat requests.",
             "status": "error",
         }
 
-    user_message = (
-        f"{question}"
-        f"{context_note}"
-    )
-
-    response = llm.invoke([
-        SystemMessage(content=GENERAL_SYSTEM_PROMPT + language_note),
-        HumanMessage(content=user_message),
-    ])
+    response = llm.invoke(_messages_for(state))
 
     return {
         "output": response.content.strip(),
         "status": "ok",
     }
+
+
+def _messages_for(state: dict) -> list:
+    question = sanitize_input(state.get("input", ""))
+    user_message = f"{question}{build_context_note(state)}"
+    return build_messages(state, user_message, get_language_instruction(state))
+
+
+def stream_general_agent(state: dict):
+    """Yields the reply in pieces as the model writes it (used for streaming chat)."""
+    if not (state.get("input") or "").strip():
+        yield FALLBACK_RESPONSE
+        return
+    llm = get_llm()
+    if llm is None:
+        yield "GEMINI_API_KEY is missing. Add it to your environment before running chat requests."
+        return
+    for chunk in llm.stream(_messages_for(state)):
+        if chunk.content:
+            yield chunk.content

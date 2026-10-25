@@ -23,6 +23,8 @@ def get_llm() -> ChatGoogleGenerativeAI | None:
         api_key=gemini_api_key,
         temperature=0.5,
         max_tokens=3000,
+        timeout=120,
+        max_retries=2,
     )
 
 # ============================================================================
