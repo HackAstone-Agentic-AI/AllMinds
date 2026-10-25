@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { jsPDF } from 'jspdf';
 import DashboardLayout from '@/components/DashboardLayout';
+import LoadError from '@/components/LoadError';
 import { LearnerProfile, ParentCommunication } from '@/types/database';
 import { ArrowLeft, Mail, Download, FileText, Eye, EyeOff, RefreshCw } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -11,6 +12,7 @@ import { getLearnerDisplayName } from '@/lib/learners';
 
 export default function ParentCommunicationPage() {
   const [learners, setLearners] = useState<LearnerProfile[]>([]);
+  const [loadError, setLoadError] = useState('');
   const [communications, setCommunications] = useState<ParentCommunication[]>([]);
   const [selectedLearner, setSelectedLearner] = useState<string>('');
   const [letterType, setLetterType] = useState<'progress' | 'concern'>('progress');
@@ -25,6 +27,7 @@ export default function ParentCommunicationPage() {
   const router = useRouter();
 
   const loadData = useCallback(async () => {
+    setLoadError('');
     try {
       const [learnersData, commsData] = await Promise.all([
         api.getLearners(),
@@ -34,6 +37,7 @@ export default function ParentCommunicationPage() {
       setCommunications(commsData);
     } catch (err) {
       console.error('Failed to load data:', err);
+      setLoadError(err instanceof Error ? err.message : 'Please try again.');
     }
   }, []);
 
@@ -180,6 +184,14 @@ export default function ParentCommunicationPage() {
     }
   };
 
+  const escapeHtml = (value: string) =>
+    value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+
   const buildLetterMarkup = (comm: ParentCommunication) => {
     const learnerId = getLearnerDisplayName({
       anonymous_id: comm.learner_anonymous_id || `Learner ${comm.learner_id}`,
@@ -198,10 +210,10 @@ export default function ParentCommunicationPage() {
         <body>
           <h1>${comm.type === 'progress' ? 'Progress Report' : 'Concern Letter'}</h1>
           <div class="meta">
-            <div><strong>Learner:</strong> ${learnerId}</div>
+            <div><strong>Learner:</strong> ${escapeHtml(learnerId)}</div>
             <div><strong>Date:</strong> ${new Date(comm.created_at).toLocaleDateString()}</div>
           </div>
-          <div>${comm.content.replace(/\n/g, '<br />')}</div>
+          <div>${escapeHtml(comm.content).replace(/\n/g, '<br />')}</div>
         </body>
       </html>
     `;
@@ -271,6 +283,7 @@ export default function ParentCommunicationPage() {
   return (
     <DashboardLayout activeTab="community">
       <div className="space-y-6">
+        <LoadError message={loadError} onRetry={() => void loadData()} />
         <div className="flex items-center gap-4">
           <button
             onClick={() => router.push('/dashboard/community')}

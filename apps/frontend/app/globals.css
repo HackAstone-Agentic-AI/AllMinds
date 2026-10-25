@@ -267,3 +267,22 @@ html[data-contrast='high'] .app-theme-surface .border-slate-200,
 html[data-contrast='high'] .app-theme-surface .border-slate-300 {
   border-color: currentColor !important;
 }
+
+/* Printing a page area: mark it with .print-area; everything else is hidden. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-area,
+  .print-area * {
+    visibility: visible;
+  }
+  .print-area {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
+  }
+  .no-print {
+    display: none !important;
+  }
+}

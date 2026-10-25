@@ -2,11 +2,30 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
+import LoadError from '@/components/LoadError';
 import { LearnerProfile } from '@/types/database';
-import { Upload, Download, User, ArrowLeft } from 'lucide-react';
+import { Upload, Download, User, ArrowLeft, FileSpreadsheet, ShieldAlert } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import LearnerCard from '@/components/LearnerCard';
 import { api } from '@/lib/api';
+import { getLearnerDisplayName } from '@/lib/learners';
+import {
+  ColumnAction,
+  LEARNER_TEMPLATE_EXAMPLE,
+  LEARNER_TEMPLATE_HEADERS,
+  PiiColumn,
+  applyColumnActions,
+  detectPiiColumns,
+  toCsv,
+} from '@/lib/learnerImport';
+
+type ImportPreview = {
+  fileName: string;
+  headers: string[];
+  rows: Record<string, unknown>[];
+  pii: PiiColumn[];
+  actions: Record<string, ColumnAction>;
+};
 
 type ImportedLearnerRow = {
   anonymous_id: string;
@@ -15,18 +34,22 @@ type ImportedLearnerRow = {
 
 export default function LearnerProfilesPage() {
   const [learners, setLearners] = useState<LearnerProfile[]>([]);
+  const [loadError, setLoadError] = useState('');
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadMessage, setUploadMessage] = useState('');
+  const [preview, setPreview] = useState<ImportPreview | null>(null);
   const router = useRouter();
 
   const loadLearners = useCallback(async () => {
+    setLoadError('');
     setLoading(true);
     try {
       const data = await api.getLearners();
       setLearners(data);
     } catch (err) {
       console.error('Failed to load learners:', err);
+      setLoadError(err instanceof Error ? err.message : 'Please try again.');
     } finally {
       setLoading(false);
     }
@@ -125,7 +148,7 @@ export default function LearnerProfilesPage() {
       rows.push(row);
     }
 
-    return buildImportedLearners(rows);
+    return rows;
   };
 
   const parseWorkbook = async (file: File) => {
@@ -169,7 +192,7 @@ export default function LearnerProfilesPage() {
       throw new Error('The spreadsheet did not contain any learner rows.');
     }
 
-    return buildImportedLearners(rows);
+    return rows;
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -189,56 +212,85 @@ export default function LearnerProfilesPage() {
       return;
     }
 
-    setUploading(true);
     setUploadMessage('');
-
     try {
-      const parsedData = await parseWorkbook(file);
-      if (parsedData.length === 0) {
+      const rows = (await parseWorkbook(file)) as Record<string, unknown>[];
+      if (rows.length === 0) {
         throw new Error('The file did not contain any learner rows.');
       }
-
-      await api.bulkUploadLearners(parsedData);
-      await loadLearners();
-      setUploadMessage(`Uploaded ${parsedData.length} learner row(s).`);
+      if (rows.length > 1000) {
+        throw new Error('Import a maximum of 1000 learner rows at a time.');
+      }
+      const headers = Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
+      const pii = detectPiiColumns(headers, rows);
+      const actions: Record<string, ColumnAction> = {};
+      for (const column of pii) actions[column.header] = column.canPseudonymise ? 'pseudonym' : 'remove';
+      setPreview({ fileName: file.name, headers, rows, pii, actions });
     } catch (err) {
-      console.error('Upload failed:', err);
-      setUploadMessage(
-        err instanceof Error ? err.message : 'Upload failed. Please check the file format.',
-      );
+      console.error('Import failed:', err);
+      setUploadMessage(err instanceof Error ? err.message : 'Import failed. Please check the file format.');
     } finally {
-      setUploading(false);
       event.target.value = '';
     }
   };
 
-  const handleDownloadProfiles = () => {
-    const csvContent = convertToCSV(learners);
-    const blob = new Blob([csvContent], { type: 'text/csv' });
+  const confirmUpload = async () => {
+    if (!preview) return;
+    setUploading(true);
+    setUploadMessage('');
+    try {
+      const learnersToUpload = buildImportedLearners(applyColumnActions(preview.rows, preview.actions));
+      const result = await api.bulkUploadLearners(learnersToUpload);
+      await loadLearners();
+      const removed = result?.pii_values_removed
+        ? ` ${result.pii_values_removed} value(s) with contact or ID details were removed by the server.`
+        : '';
+      setUploadMessage(`${result?.message || `Uploaded ${learnersToUpload.length} learner row(s)`}.${removed}`);
+      setPreview(null);
+    } catch (err) {
+      console.error('Upload failed:', err);
+      setUploadMessage(err instanceof Error ? err.message : 'Upload failed. Please check the file format.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const downloadCsv = (content: string, fileName: string) => {
+    const blob = new Blob([content], { type: 'text/csv;charset=utf-8' });
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `learner_profiles_${new Date().toISOString().split('T')[0]}.csv`;
+    link.download = fileName;
     link.click();
     window.URL.revokeObjectURL(url);
   };
 
+  const downloadTemplate = () => {
+    downloadCsv(toCsv(LEARNER_TEMPLATE_HEADERS, [LEARNER_TEMPLATE_EXAMPLE]), 'allminds_learner_template.csv');
+  };
+
+  const handleDownloadProfiles = () => {
+    downloadCsv(convertToCSV(learners), `learner_profiles_${new Date().toISOString().split('T')[0]}.csv`);
+  };
+
+  // Exports every profile field the teacher stored, not just ids and dates.
   const convertToCSV = (data: LearnerProfile[]) => {
-    if (data.length === 0) return '';
-
-    const headers = ['Anonymous ID', 'Created At', 'Updated At'];
-    const rows = data.map((learner) => [
-      learner.anonymous_id,
-      new Date(learner.created_at).toLocaleDateString(),
-      new Date(learner.updated_at).toLocaleDateString(),
-    ]);
-
-    return [headers.join(','), ...rows.map((row) => row.join(','))].join('\n');
+    const profileKeys = Array.from(new Set(data.flatMap((learner) => Object.keys(learner.profile_data || {}))))
+      .filter((key) => key !== 'demo');
+    const headers = ['anonymous_id', 'display_name', ...profileKeys, 'created_at'];
+    const rows = data.map((learner) => ({
+      ...(learner.profile_data || {}),
+      anonymous_id: learner.anonymous_id,
+      display_name: getLearnerDisplayName(learner),
+      created_at: new Date(learner.created_at).toISOString().split('T')[0],
+    }));
+    return toCsv(headers, rows);
   };
 
   return (
     <DashboardLayout activeTab="tools">
       <div className="space-y-6">
+        <LoadError message={loadError} onRetry={() => void loadLearners()} />
         <div className="flex items-center gap-4">
           <button
             onClick={() => router.push('/dashboard/tools')}
@@ -257,9 +309,17 @@ export default function LearnerProfilesPage() {
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
           <h3 className="font-semibold text-amber-900 mb-2">Privacy & Anonymization</h3>
           <p className="text-sm text-amber-800">
-            All learner data is automatically anonymized to protect student privacy. Personal
-            identifying information is replaced with anonymous IDs.
+            Learners are stored under anonymous IDs. Before anything is uploaded, AllMinds checks your file for
+            names, ID numbers, contact details and addresses, and lets you remove them or shorten names to a
+            pseudonym. Use the template for the recommended columns.
           </p>
+          <button
+            type="button"
+            onClick={downloadTemplate}
+            className="mt-3 inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-sm font-medium text-amber-900 hover:bg-amber-100"
+          >
+            <FileSpreadsheet className="h-4 w-4" /> Download CSV template
+          </button>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -301,6 +361,109 @@ export default function LearnerProfilesPage() {
             </div>
           </div>
         </div>
+
+        {preview && (
+          <section className="space-y-4 rounded-xl border border-blue-200 bg-white p-5" aria-label="Import preview">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-800">Review before upload</h3>
+                <p className="text-sm text-slate-600">
+                  {preview.fileName}: {preview.rows.length} learner row(s), {preview.headers.length} column(s)
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPreview(null)}
+                  className="rounded-lg border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void confirmUpload()}
+                  disabled={uploading}
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {uploading ? 'Uploading…' : `Upload ${preview.rows.length} learner(s)`}
+                </button>
+              </div>
+            </div>
+
+            {preview.pii.length > 0 ? (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+                <p className="flex items-center gap-2 font-medium text-red-800">
+                  <ShieldAlert className="h-5 w-5" /> {preview.pii.length} column(s) may identify a learner
+                </p>
+                <ul className="mt-3 space-y-2">
+                  {preview.pii.map((column) => (
+                    <li key={column.header} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                      <span>
+                        <span className="font-medium text-slate-800">{column.header}</span>{' '}
+                        <span className="text-slate-600">({column.reason})</span>
+                      </span>
+                      <select
+                        aria-label={`What to do with ${column.header}`}
+                        value={preview.actions[column.header]}
+                        onChange={(e) =>
+                          setPreview({
+                            ...preview,
+                            actions: { ...preview.actions, [column.header]: e.target.value as ColumnAction },
+                          })
+                        }
+                        className="rounded-lg border border-slate-300 bg-white px-2 py-1"
+                      >
+                        <option value="remove">Remove column</option>
+                        {column.canPseudonymise && <option value="pseudonym">Keep first name + initial</option>}
+                        <option value="keep">Keep as is</option>
+                      </select>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              <p className="rounded-lg bg-green-50 px-4 py-2 text-sm text-green-800">No identifying columns were found.</p>
+            )}
+
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200">
+                    {preview.headers.map((header) => (
+                      <th
+                        key={header}
+                        className={`px-2 py-1 font-semibold ${
+                          preview.actions[header] === 'remove' ? 'text-slate-400 line-through' : 'text-slate-700'
+                        }`}
+                      >
+                        {header}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {preview.rows.slice(0, 5).map((row, index) => (
+                    <tr key={index} className="border-b border-slate-100">
+                      {preview.headers.map((header) => (
+                        <td
+                          key={header}
+                          className={`px-2 py-1 ${
+                            preview.actions[header] === 'remove' ? 'text-slate-300 line-through' : 'text-slate-700'
+                          }`}
+                        >
+                          {String(row[header] ?? '')}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {preview.rows.length > 5 && (
+                <p className="mt-1 text-xs text-slate-500">Showing the first 5 of {preview.rows.length} rows.</p>
+              )}
+            </div>
+          </section>
+        )}
 
         {uploadMessage && (
           <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">

@@ -2,13 +2,16 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
+import LoadError from '@/components/LoadError';
 import { ForumPost, ForumComment } from '@/types/database';
 import { ArrowLeft, ChevronDown, ChevronUp, MessageSquare, Plus, Send, TriangleAlert as AlertTriangle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
+import { findPii, piiMessage } from '@/lib/pii';
 
 export default function ForumPage() {
   const [posts, setPosts] = useState<ForumPost[]>([]);
+  const [loadError, setLoadError] = useState('');
   const [showNewPost, setShowNewPost] = useState(false);
   const [newPost, setNewPost] = useState({ title: '', content: '' });
   const [posting, setPosting] = useState(false);
@@ -21,11 +24,13 @@ export default function ForumPage() {
   const router = useRouter();
 
   const loadPosts = useCallback(async () => {
+    setLoadError('');
     try {
       const data = await api.getForumPosts();
       setPosts(data);
     } catch (err) {
       console.error('Failed to load posts:', err);
+      setLoadError(err instanceof Error ? err.message : 'Please try again.');
     }
   }, []);
 
@@ -36,12 +41,9 @@ export default function ForumPage() {
   const createPost = async () => {
     if (!newPost.title.trim() || !newPost.content.trim()) return;
 
-    const bannedWords = ['name', 'address', 'phone', 'email', 'student'];
-    const contentLower = (newPost.title + ' ' + newPost.content).toLowerCase();
-    if (bannedWords.some((word) => contentLower.includes(word))) {
-      setMessage(
-        'Your post may contain identifying information. Please remove student names and personal details.'
-      );
+    const pii = findPii(`${newPost.title}\n${newPost.content}`);
+    if (pii.length > 0) {
+      setMessage(piiMessage(pii));
       return;
     }
 
@@ -76,6 +78,7 @@ export default function ForumPage() {
         setComments((prev) => ({ ...prev, [postId]: data }));
       } catch (err) {
         console.error('Failed to load comments:', err);
+        setMessage(err instanceof Error ? `Could not load comments: ${err.message}` : 'Could not load comments.');
       } finally {
         setLoadingComments((prev) => ({ ...prev, [postId]: false }));
       }
@@ -85,6 +88,11 @@ export default function ForumPage() {
   const submitComment = async (postId: number) => {
     const content = (newComment[postId] || '').trim();
     if (!content) return;
+    const pii = findPii(content);
+    if (pii.length > 0) {
+      setMessage(piiMessage(pii));
+      return;
+    }
 
     setPostingComment((prev) => ({ ...prev, [postId]: true }));
     try {
@@ -102,6 +110,7 @@ export default function ForumPage() {
       );
     } catch (err: any) {
       console.error('Failed to post comment:', err);
+      setMessage(err?.message || 'Could not post that comment.');
     } finally {
       setPostingComment((prev) => ({ ...prev, [postId]: false }));
     }
@@ -110,6 +119,7 @@ export default function ForumPage() {
   return (
     <DashboardLayout activeTab="community">
       <div className="space-y-6">
+        <LoadError message={loadError} onRetry={() => void loadPosts()} />
         <div className="flex items-center gap-4">
           <button
             onClick={() => router.push('/dashboard/community')}

@@ -1,8 +1,7 @@
 'use client';
 
-import { useState } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
-import { MessageSquare, Mail } from 'lucide-react';
+import { MessageSquare, Mail, Lightbulb } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 export default function CommunityPage() {
@@ -83,6 +82,24 @@ export default function CommunityPage() {
                     />
                   </svg>
                 </div>
+              </div>
+            </div>
+          </button>
+
+          <button
+            onClick={() => router.push('/dashboard/community/strategies')}
+            className="bg-white border-2 border-slate-200 hover:border-amber-300 rounded-xl p-8 hover:shadow-lg transition text-left group md:col-span-2"
+          >
+            <div className="flex items-start gap-4">
+              <div className="w-16 h-16 bg-amber-100 rounded-xl flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition">
+                <Lightbulb className="w-8 h-8 text-amber-600" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-2xl font-semibold text-slate-800 mb-2">Strategy Library</h3>
+                <p className="text-slate-600 mb-4">
+                  Classroom strategies that worked for other teachers. Filter by challenge, vote for what helped, share your own.
+                </p>
+                <div className="text-sm font-medium text-amber-600">Open library →</div>
               </div>
             </div>
           </button>

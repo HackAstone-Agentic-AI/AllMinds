@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
+import LoadError from '@/components/LoadError';
 import { api } from '@/lib/api';
 import { getLearnerDisplayName } from '@/lib/learners';
 import {
@@ -59,7 +60,31 @@ type ProgressAnalytics = {
   latestProgressLevel: string;
   latestAchievements: string;
   supportPriorityScore: number;
-  supportPriorityBand: 'Low' | 'Moderate' | 'High';
+  supportPriorityBand: 'Low' | 'Moderate' | 'High' | 'Not enough data';
+};
+
+type AgentAnalytics = {
+  summary?: {
+    records?: number;
+    average_mark?: number | null;
+    average_behavior?: number;
+    average_progress?: number;
+    overall_trend?: string;
+    behavior_trend?: string;
+  };
+  risk_flags?: string[];
+  narrative?: string;
+};
+
+// Trends and bands from fewer records than this are shown as provisional.
+const MIN_RECORDS_FOR_TREND = 3;
+
+// Teacher-chosen progress level used as the academic signal for the agent (0-100).
+const LEVEL_TO_MARK: Record<string, number> = {
+  Excellent: 90,
+  Good: 75,
+  Moderate: 55,
+  'Needs Support': 35,
 };
 
 function average(values: number[]) {
@@ -75,6 +100,15 @@ function clampPercent(value: number) {
 
 function likertToPercent(value: number) {
   return clampPercent((value / 5) * 100);
+}
+
+// Older imports stored list fields as "a; b" strings; the page needs arrays.
+function toList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String);
+  if (typeof value === 'string' && value.trim()) {
+    return value.split(/[;,|]/).map((item) => item.trim()).filter(Boolean);
+  }
+  return [];
 }
 
 function mapLearnerRow(row: LearnerProfileRow): LearnerProfile {
@@ -95,17 +129,13 @@ function mapLearnerRow(row: LearnerProfileRow): LearnerProfile {
       profile.grade_level ||
       profile.classGrade ||
       '',
-    neurotypeTags:
-      profile.neurotypeTags ||
-      profile.neurotype_tags ||
-      profile.neurodivergent_conditions ||
-      [],
-    supportNeeds:
-      profile.supportNeeds ||
-      profile.support_needs ||
-      profile.learning_support_needs ||
-      [],
-    strengths: profile.strengths || profile.learner_strengths || [],
+    neurotypeTags: toList(
+      profile.neurotypeTags || profile.neurotype_tags || profile.neurodivergent_conditions
+    ),
+    supportNeeds: toList(
+      profile.supportNeeds || profile.support_needs || profile.learning_support_needs
+    ),
+    strengths: toList(profile.strengths || profile.learner_strengths),
     recentNotes:
       profile.recentNotes || profile.recent_notes || profile.notes || '',
     updatedAt: row.updated_at,
@@ -163,18 +193,22 @@ function getRiskBand(score: number): 'Low' | 'Moderate' | 'High' {
 }
 
 function mapProgressToAgentRecords(records: LearnerProgressRow[]) {
-  return records.map((record) => ({
-    date: record.recorded_at,
-    subject: record.progress_data?.area || 'General',
-    mark: (Number(record.progress_data?.engagementLevel) || 0) * 20,
-    behavior: {
-      attention: Number(record.progress_data?.engagementLevel) || 0,
-      participation: Number(record.progress_data?.taskCompletionLevel) || 0,
-      homework_completion: Number(record.progress_data?.taskCompletionLevel) || 0,
-      emotional_regulation: 3,
-      attendance: record.progress_data?.attendance ?? 'not present',
-    },
-  }));
+  return records.map((record) => {
+    const data = record.progress_data ?? {};
+    const attendance = String(data.attendance || '').toLowerCase();
+    return {
+      date: record.recorded_at,
+      subject: data.area || 'General',
+      // Only send a mark when the teacher chose a level; missing is "not assessed".
+      ...(LEVEL_TO_MARK[data.level] !== undefined ? { mark: LEVEL_TO_MARK[data.level] } : {}),
+      behavior: {
+        attention: Number(data.engagementLevel) || 0,
+        participation: Number(data.taskCompletionLevel) || 0,
+        homework_completion: Number(data.taskCompletionLevel) || 0,
+        attendance: attendance === 'present' ? 5 : attendance === 'not present' ? 1 : 0,
+      },
+    };
+  });
 }
 
 function getProgressAnalytics(
@@ -190,7 +224,7 @@ function getProgressAnalytics(
       latestProgressLevel: 'No records yet',
       latestAchievements: 'No achievements logged yet',
       supportPriorityScore: 0,
-      supportPriorityBand: 'Low',
+      supportPriorityBand: 'Not enough data',
     };
   }
 
@@ -257,7 +291,7 @@ function getProgressAnalytics(
     latestProgressLevel,
     latestAchievements,
     supportPriorityScore,
-    supportPriorityBand: getRiskBand(supportPriorityScore),
+    supportPriorityBand: components.length ? getRiskBand(supportPriorityScore) : 'Not enough data',
   };
 }
 
@@ -326,12 +360,16 @@ export default function LearnerAnalyticsPage() {
   };
 
   const [learnerProfiles, setLearnerProfiles] = useState<LearnerProfile[]>([]);
+  const [loadError, setLoadError] = useState('');
   const [selectedLearnerProgress, setSelectedLearnerProgress] = useState<LearnerProgressRow[]>([]);
   const [selectedSensoryLogs, setSelectedSensoryLogs] = useState<SensoryLogRow[]>([]);
   const [selectedLearnerId, setSelectedLearnerId] = useState<string>('');
   const [loadingLearners, setLoadingLearners] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(false);
   const [agentAnalysis, setAgentAnalysis] = useState('');
+  const [agentAnalytics, setAgentAnalytics] = useState<AgentAnalytics | null>(null);
+  const [supportPlan, setSupportPlan] = useState('');
+  const [supportSending, setSupportSending] = useState(false);
   const [agentLoading, setAgentLoading] = useState(false);
   const [agentError, setAgentError] = useState('');
 
@@ -363,24 +401,32 @@ export default function LearnerAnalyticsPage() {
     loadLearnerProgress(selectedLearnerId);
     loadSensoryLogs(selectedLearnerId);
     setAgentAnalysis('');
+    setAgentAnalytics(null);
+    setSupportPlan('');
     setAgentError('');
   }, [selectedLearnerId]);
 
   const loadLearnerList = async () => {
+    setLoadError('');
     setLoadingLearners(true);
     try {
       const rows = (await api.getLearners()) as LearnerProfileRow[];
       const learners = rows.map(mapLearnerRow);
       setLearnerProfiles(learners);
       if (learners.length > 0) {
+        // Deep links from the dashboard's attention list: ?learnerId=123
+        const requested = new URLSearchParams(window.location.search).get('learnerId');
         setSelectedLearnerId((prev) =>
-          learners.some((l) => l.id === prev) ? prev : learners[0].id
+          requested && learners.some((l) => l.id === requested)
+            ? requested
+            : learners.some((l) => l.id === prev) ? prev : learners[0].id
         );
       } else {
         setSelectedLearnerId('');
       }
     } catch (err) {
       console.error('Failed to load learner profiles:', err);
+      setLoadError(err instanceof Error ? err.message : 'Please try again.');
       setLearnerProfiles([]);
       setSelectedLearnerId('');
     } finally {
@@ -506,6 +552,7 @@ export default function LearnerAnalyticsPage() {
         }
       ) as Record<string, any>;
       setAgentAnalysis(result.response || result.output || '');
+      setAgentAnalytics((result.analytics as AgentAnalytics) || null);
     } catch (err: any) {
       setAgentError(err?.message || 'Agent request failed. Please try again.');
     } finally {
@@ -547,31 +594,38 @@ export default function LearnerAnalyticsPage() {
     };
 
     setRequestStatusTone('info');
-    setRequestStatusMessage('Sending support request...');
+    setRequestStatusMessage('Building a support plan. This usually takes 10-20 seconds...');
+    setSupportSending(true);
+    setSupportPlan('');
 
     try {
-      await api.chatWithAgent(`Learner support request: ${requestType}. Goal: ${trimmedGoal}`, {
-        tool_hint: 'analytics',
+      const result = (await api.chatWithAgent(trimmedGoal, {
+        tool_hint: 'support',
         learner_name: getLearnerLabel(selectedLearner),
-        records: mapProgressToAgentRecords(selectedLearnerProgress),
+        records: includeAnalytics ? mapProgressToAgentRecords(selectedLearnerProgress) : [],
         request_type: requestType,
         urgency,
-        requested_capabilities: requestedCapabilities,
-        request_context: contextPayload,
+        request_context: { ...contextPayload, requestedCapabilities },
         language_pref: localStorage.getItem('allminds_language') || 'en',
-      });
+      })) as Record<string, any>;
+      const plan: string = result.response || '';
+      if (!plan) throw new Error('No support plan was returned. Please try again.');
+      setSupportPlan(plan);
       setRequestGoal('');
       setRequestStatusTone('success');
-      setRequestStatusMessage('Support request sent. Review the AI response in the assistant panel.');
+      setRequestStatusMessage('Support plan ready - see below.');
     } catch (err: any) {
       setRequestStatusTone('error');
       setRequestStatusMessage(err?.message || 'Support request failed. Please try again.');
+    } finally {
+      setSupportSending(false);
     }
   };
 
   return (
     <DashboardLayout activeTab="learner-analytics">
       <div className="space-y-6">
+        <LoadError message={loadError} onRetry={() => void loadLearnerList()} />
         <div>
           <div className="inline-flex items-center gap-2 text-sm font-medium text-blue-600">
             <Brain className="w-4 h-4" />
@@ -685,6 +739,13 @@ export default function LearnerAnalyticsPage() {
                 <p className="text-sm text-slate-500">Loading progress records…</p>
               ) : (
                 <div className="space-y-5">
+                  {progressAnalytics.progressEntries < MIN_RECORDS_FOR_TREND && (
+                    <p role="status" className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-800">
+                      {progressAnalytics.progressEntries === 0
+                        ? 'No progress records yet. Add records with engagement, task completion and attendance to see analytics.'
+                        : `Only ${progressAnalytics.progressEntries} record(s) so far. Scores are provisional until there are at least ${MIN_RECORDS_FOR_TREND}.`}
+                    </p>
+                  )}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="rounded-xl border border-slate-200 p-4">
                       <p className="text-sm text-slate-500">Learner</p>
@@ -760,7 +821,28 @@ export default function LearnerAnalyticsPage() {
                       <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{agentError}</p>
                     )}
                     {agentAnalysis ? (
-                      <p className="text-sm text-slate-700 leading-6 whitespace-pre-wrap">{agentAnalysis}</p>
+                      <div className="space-y-3">
+                        <p className="text-sm text-slate-700 leading-6 whitespace-pre-wrap">{agentAnalysis}</p>
+                        {agentAnalytics?.narrative && (
+                          <p className="text-sm text-slate-700 leading-6 bg-slate-50 rounded-lg p-3">{agentAnalytics.narrative}</p>
+                        )}
+                        {agentAnalytics?.summary?.overall_trend && (
+                          <p className="text-xs text-slate-500">
+                            Overall trend: <span className="font-medium text-slate-700">{agentAnalytics.summary.overall_trend}</span>
+                            {agentAnalytics.summary.behavior_trend && <> · Behaviour trend: <span className="font-medium text-slate-700">{agentAnalytics.summary.behavior_trend}</span></>}
+                          </p>
+                        )}
+                        {(agentAnalytics?.risk_flags ?? []).length > 0 && (
+                          <ul className="space-y-1">
+                            {agentAnalytics?.risk_flags?.map((flag) => (
+                              <li key={flag} className="flex items-start gap-2 text-sm text-red-700 bg-red-50 rounded-lg px-3 py-2">
+                                <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                                {flag}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
                     ) : !agentLoading && !agentError ? (
                       <p className="text-sm text-slate-400">Click &quot;Analyse with AI&quot; to get a detailed AI-generated narrative and risk flags for this learner.</p>
                     ) : null}
@@ -992,11 +1074,11 @@ export default function LearnerAnalyticsPage() {
               <div className="mt-5">
                 <button
                   onClick={handleCreateSupportRequest}
-                  disabled={!selectedLearner || !requestGoal.trim()}
+                  disabled={!selectedLearner || !requestGoal.trim() || supportSending}
                   className="inline-flex items-center gap-2 px-4 py-3 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
                 >
-                  <RefreshCw className="w-4 h-4" />
-                  Send support request
+                  <RefreshCw className={`w-4 h-4 ${supportSending ? 'animate-spin' : ''}`} />
+                  {supportSending ? 'Building plan…' : 'Get support plan'}
                 </button>
                 {requestStatusMessage && (
                   <p
@@ -1010,6 +1092,13 @@ export default function LearnerAnalyticsPage() {
                   >
                     {requestStatusMessage}
                   </p>
+                )}
+                {supportPlan && (
+                  <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50/40 p-4">
+                    <h4 className="font-semibold text-slate-800 mb-2">Support plan</h4>
+                    <p className="text-sm text-slate-700 leading-6 whitespace-pre-wrap">{supportPlan}</p>
+                    <p className="text-xs text-slate-500 mt-3">AI-generated suggestions to discuss with your school-based support team. Not a diagnosis.</p>
+                  </div>
                 )}
               </div>
             </div>

@@ -1,413 +1,547 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
-import { BookOpen, MapPin, ExternalLink } from 'lucide-react';
+import LoadError from '@/components/LoadError';
+import {
+  BookOpen,
+  ExternalLink,
+  Flag,
+  Loader2,
+  LocateFixed,
+  Mail,
+  MapPin,
+  MessageCircle,
+  Phone,
+  Search,
+  Sparkles,
+  Star,
+} from 'lucide-react';
 import { api } from '@/lib/api';
 
-interface NearbyNgo {
+interface Ngo {
   id: number;
   name: string;
-  city: string;
-  province: string;
+  city: string | null;
+  province: string | null;
+  address: string | null;
   services?: string[];
-  latitude?: number;
-  longitude?: number;
-  contact_phone?: string;
-  distanceKm?: number;
+  latitude?: number | null;
+  longitude?: number | null;
+  contact_phone?: string | null;
+  contact_email?: string | null;
+  website?: string | null;
+  rating?: number | string;
+  review_count?: number;
+  source_url?: string | null;
+  last_checked?: string | null;
+  coverage: 'local' | 'national';
+  location_precision: 'address' | 'suburb' | 'city' | 'none';
+  description?: string | null;
+  distanceKm?: number | null;
+  score?: number;
+  reasons?: string[];
+}
+
+interface TrainingResource {
+  id: number;
+  title: string;
+  provider: string;
+  topic: string;
+  duration: string | null;
+  cost: string | null;
+  url: string;
+  description: string | null;
+  last_checked: string | null;
+}
+
+interface AiMatch {
+  id: number;
+  why: string;
+}
+
+const PROVINCES = [
+  'Eastern Cape', 'Free State', 'Gauteng', 'KwaZulu-Natal', 'Limpopo',
+  'Mpumalanga', 'North West', 'Northern Cape', 'Western Cape',
+];
+
+// South African mobile numbers (06x/07x/08x) can receive WhatsApp messages.
+const whatsappLink = (phone: string) => {
+  const digits = phone.replace(/\D/g, '');
+  if (/^0[678]\d{8}$/.test(digits)) return `https://wa.me/27${digits.slice(1)}`;
+  return null;
+};
+
+const formatDate = (value?: string | null) => (value ? new Date(value).toLocaleDateString() : 'unknown');
+
+function NgoCard({
+  ngo,
+  aiReason,
+  onReviewed,
+}: {
+  ngo: Ngo;
+  aiReason?: string;
+  onReviewed: () => void;
+}) {
+  const [panel, setPanel] = useState<'none' | 'rate' | 'report' | 'map'>('none');
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState('');
+  const [issue, setIssue] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState('');
+
+  const hasCoords = ngo.latitude != null && ngo.longitude != null && ngo.location_precision !== 'none';
+  const wa = ngo.contact_phone ? whatsappLink(ngo.contact_phone) : null;
+  const ratingValue = Number(ngo.rating) || 0;
+
+  const submitReview = async () => {
+    if (!rating) return;
+    setBusy(true);
+    setNotice('');
+    try {
+      await api.submitNgoReview(ngo.id, rating, comment.trim());
+      setNotice('Thanks for your review.');
+      setPanel('none');
+      onReviewed();
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Could not save your review.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitReport = async () => {
+    if (issue.trim().length < 3) return;
+    setBusy(true);
+    setNotice('');
+    try {
+      const res = await api.reportNgo(ngo.id, issue.trim());
+      setNotice(res.message || 'Thanks for the report.');
+      setIssue('');
+      setPanel('none');
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Could not send the report.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const delta = 0.02;
+  const mapSrc = hasCoords
+    ? `https://www.openstreetmap.org/export/embed.html?bbox=${Number(ngo.longitude) - delta}%2C${Number(ngo.latitude) - delta}%2C${Number(ngo.longitude) + delta}%2C${Number(ngo.latitude) + delta}&layer=mapnik&marker=${ngo.latitude}%2C${ngo.longitude}`
+    : '';
+
+  return (
+    <article className={`rounded-xl border p-5 ${aiReason ? 'border-violet-300 bg-violet-50/40' : 'border-slate-200 bg-white'}`}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h4 className="text-lg font-semibold text-slate-800">{ngo.name}</h4>
+          <p className="text-sm text-slate-500">
+            {ngo.coverage === 'national' ? 'National service' : [ngo.city, ngo.province].filter(Boolean).join(', ')}
+          </p>
+        </div>
+        <div className="text-right text-sm">
+          {ngo.distanceKm != null && ngo.coverage !== 'national' && (
+            <p className="font-semibold text-blue-700">{ngo.distanceKm.toFixed(1)} km</p>
+          )}
+          <p className="flex items-center justify-end gap-1 text-slate-600">
+            <Star className="h-4 w-4 text-amber-500" />
+            {Number(ngo.review_count) > 0 ? `${ratingValue.toFixed(1)} (${ngo.review_count})` : 'No reviews yet'}
+          </p>
+        </div>
+      </div>
+
+      {aiReason && (
+        <p className="mt-3 flex items-start gap-2 rounded-lg bg-violet-100 px-3 py-2 text-sm text-violet-900">
+          <Sparkles className="mt-0.5 h-4 w-4 shrink-0" /> {aiReason}
+        </p>
+      )}
+      {ngo.description && <p className="mt-3 text-sm text-slate-700">{ngo.description}</p>}
+      {(ngo.reasons ?? []).length > 0 && !aiReason && (
+        <p className="mt-2 text-xs text-slate-500">Why it ranks here: {ngo.reasons?.join(' · ')}</p>
+      )}
+      <div className="mt-3 flex flex-wrap gap-2">
+        {(ngo.services ?? []).map((service) => (
+          <span key={service} className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-xs text-blue-700">
+            {service}
+          </span>
+        ))}
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2 text-sm">
+        {ngo.contact_phone && (
+          <a href={`tel:${ngo.contact_phone.replace(/\s/g, '')}`} className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 hover:bg-slate-50">
+            <Phone className="h-4 w-4" /> {ngo.contact_phone}
+          </a>
+        )}
+        {wa && (
+          <a href={wa} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded-lg border border-green-300 px-3 py-1.5 text-green-700 hover:bg-green-50">
+            <MessageCircle className="h-4 w-4" /> WhatsApp
+          </a>
+        )}
+        {ngo.contact_email && (
+          <a href={`mailto:${ngo.contact_email}`} className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 hover:bg-slate-50">
+            <Mail className="h-4 w-4" /> E-mail
+          </a>
+        )}
+        {ngo.website && (
+          <a href={ngo.website} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 hover:bg-slate-50">
+            <ExternalLink className="h-4 w-4" /> Website
+          </a>
+        )}
+        {hasCoords && (
+          <>
+            <a
+              href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(ngo.address || `${ngo.latitude},${ngo.longitude}`)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 hover:bg-slate-50"
+            >
+              <MapPin className="h-4 w-4" /> Directions
+            </a>
+            <button type="button" onClick={() => setPanel(panel === 'map' ? 'none' : 'map')} className="rounded-lg border border-slate-300 px-3 py-1.5 hover:bg-slate-50">
+              {panel === 'map' ? 'Hide map' : 'Show map'}
+            </button>
+          </>
+        )}
+        <button type="button" onClick={() => setPanel(panel === 'rate' ? 'none' : 'rate')} className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 hover:bg-slate-50">
+          <Star className="h-4 w-4" /> Rate
+        </button>
+        <button type="button" onClick={() => setPanel(panel === 'report' ? 'none' : 'report')} className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-slate-600 hover:bg-slate-50">
+          <Flag className="h-4 w-4" /> Report wrong info
+        </button>
+      </div>
+
+      {panel === 'map' && hasCoords && (
+        <div className="mt-3">
+          <iframe title={`Map of ${ngo.name}`} src={mapSrc} className="h-56 w-full rounded-lg border border-slate-200" loading="lazy" />
+          {ngo.location_precision !== 'address' && (
+            <p className="mt-1 text-xs text-slate-500">Approximate location ({ngo.location_precision} level). Confirm the address before visiting.</p>
+          )}
+        </div>
+      )}
+
+      {panel === 'rate' && (
+        <div className="mt-3 space-y-2 rounded-lg bg-slate-50 p-3">
+          <div className="flex items-center gap-1" role="radiogroup" aria-label="Rating">
+            {[1, 2, 3, 4, 5].map((value) => (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={rating === value}
+                aria-label={`${value} star${value > 1 ? 's' : ''}`}
+                onClick={() => setRating(value)}
+              >
+                <Star className={`h-6 w-6 ${value <= rating ? 'fill-amber-400 text-amber-500' : 'text-slate-300'}`} />
+              </button>
+            ))}
+          </div>
+          <textarea
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            rows={2}
+            maxLength={1000}
+            placeholder="Optional: how did this organisation help? (no learner names)"
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          />
+          <button type="button" disabled={!rating || busy} onClick={submitReview} className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">
+            Submit review
+          </button>
+        </div>
+      )}
+
+      {panel === 'report' && (
+        <div className="mt-3 space-y-2 rounded-lg bg-slate-50 p-3">
+          <textarea
+            value={issue}
+            onChange={(e) => setIssue(e.target.value)}
+            rows={2}
+            maxLength={1000}
+            placeholder="What is wrong or out of date?"
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          />
+          <button type="button" disabled={issue.trim().length < 3 || busy} onClick={submitReport} className="rounded-lg bg-slate-700 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">
+            Send report
+          </button>
+        </div>
+      )}
+
+      {notice && <p role="status" className="mt-2 text-sm text-slate-700">{notice}</p>}
+
+      <p className="mt-3 text-xs text-slate-400">
+        Source:{' '}
+        {ngo.source_url ? (
+          <a href={ngo.source_url} target="_blank" rel="noopener noreferrer" className="underline">
+            public listing
+          </a>
+        ) : (
+          'directory'
+        )}{' '}
+        · checked {formatDate(ngo.last_checked)} · please confirm details before relying on them
+      </p>
+    </article>
+  );
 }
 
 export default function ProfessionalDevelopmentPage() {
-  const [activeTab, setActiveTab] = useState<'training' | 'health'>('training');
-  const [locationLoading, setLocationLoading] = useState(false);
-  const [locationError, setLocationError] = useState('');
-  const [nearbyServices, setNearbyServices] = useState<NearbyNgo[]>([]);
-  const [serviceFilter, setServiceFilter] = useState('');
+  const [activeTab, setActiveTab] = useState<'support' | 'training'>('support');
+  const [need, setNeed] = useState('');
+  const [province, setProvince] = useState('');
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [locating, setLocating] = useState(false);
+  const [locationNote, setLocationNote] = useState('');
+  const [results, setResults] = useState<Ngo[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searched, setSearched] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [aiMatches, setAiMatches] = useState<AiMatch[]>([]);
+  const [aiNote, setAiNote] = useState('');
+  const [matching, setMatching] = useState(false);
+  const [training, setTraining] = useState<TrainingResource[]>([]);
+  const [trainingError, setTrainingError] = useState('');
 
-  const trainingResources = [
-    {
-      title: 'Understanding Autism Spectrum Disorder',
-      provider: 'Coursera',
-      duration: '4 weeks',
-      level: 'Beginner',
-      url: 'https://www.coursera.org',
-      description: 'Learn about ASD characteristics and effective teaching strategies',
-    },
-    {
-      title: 'ADHD in the Classroom',
-      provider: 'edX',
-      duration: '6 weeks',
-      level: 'Intermediate',
-      url: 'https://www.edx.org',
-      description: 'Strategies for supporting students with ADHD',
-    },
-    {
-      title: 'Inclusive Education Practices',
-      provider: 'FutureLearn',
-      duration: '3 weeks',
-      level: 'Beginner',
-      url: 'https://www.futurelearn.com',
-      description: 'Creating inclusive learning environments for all students',
-    },
-    {
-      title: 'Sensory Processing in Education',
-      provider: 'Udemy',
-      duration: 'Self-paced',
-      level: 'Intermediate',
-      url: 'https://www.udemy.com',
-      description: 'Understanding sensory needs in neurodiverse learners',
-    },
-    {
-      title: 'Teacher Stress Management',
-      provider: 'LinkedIn Learning',
-      duration: '2 hours',
-      level: 'All Levels',
-      url: 'https://www.linkedin.com/learning',
-      description: 'Techniques for managing stress and preventing burnout',
-    },
-    {
-      title: 'Dyslexia Support Strategies',
-      provider: 'Coursera',
-      duration: '5 weeks',
-      level: 'Intermediate',
-      url: 'https://www.coursera.org',
-      description: 'Evidence-based approaches for supporting students with dyslexia',
-    },
-  ];
+  // keepAi: refresh ratings after a review without discarding the AI recommendations.
+  const search = useCallback(async (keepAi = false) => {
+    setSearching(true);
+    setLoadError('');
+    if (!keepAi) {
+      setAiMatches([]);
+      setAiNote('');
+    }
+    try {
+      const params: Record<string, string> = {};
+      if (need.trim()) params.need = need.trim();
+      if (province) params.province = province;
+      if (coords) {
+        params.lat = String(coords.lat);
+        params.lng = String(coords.lng);
+      }
+      const data = await api.getNGOs(params);
+      setResults(data.ngos || []);
+      setSearched(true);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Please try again.');
+    } finally {
+      setSearching(false);
+    }
+  }, [need, province, coords]);
 
-  const calculateDistanceKm = (
-    lat1: number,
-    lon1: number,
-    lat2: number,
-    lon2: number,
-  ) => {
-    const toRadians = (value: number) => (value * Math.PI) / 180;
-    const earthRadiusKm = 6371;
-    const dLat = toRadians(lat2 - lat1);
-    const dLon = toRadians(lon2 - lon1);
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(toRadians(lat1)) *
-        Math.cos(toRadians(lat2)) *
-        Math.sin(dLon / 2) *
-        Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return earthRadiusKm * c;
-  };
+  const loadTraining = useCallback(async () => {
+    setTrainingError('');
+    try {
+      setTraining(await api.getTrainingResources());
+    } catch (err) {
+      setTrainingError(err instanceof Error ? err.message : 'Please try again.');
+    }
+  }, []);
 
-  const enableLocationServices = async () => {
+  useEffect(() => {
+    void search();
+    // Initial load only; later searches are user-triggered.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'training' && training.length === 0) void loadTraining();
+  }, [activeTab, training.length, loadTraining]);
+
+  const useMyLocation = () => {
     if (!navigator.geolocation) {
-      setLocationError('Location services are not supported in this browser.');
+      setLocationNote('Location is not supported in this browser. Choose a province instead.');
       return;
     }
-
-    setLocationLoading(true);
-    setLocationError('');
-
+    setLocating(true);
+    setLocationNote('');
     navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        try {
-          const data = await api.getNGOs();
-          const nearest = (data.ngos || [])
-            .filter((ngo: NearbyNgo) => ngo.latitude && ngo.longitude)
-            .map((ngo: NearbyNgo) => ({
-              ...ngo,
-              distanceKm: calculateDistanceKm(
-                position.coords.latitude,
-                position.coords.longitude,
-                Number(ngo.latitude),
-                Number(ngo.longitude),
-              ),
-            }))
-            .sort((a: NearbyNgo, b: NearbyNgo) => (a.distanceKm || 0) - (b.distanceKm || 0))
-            .slice(0, 6);
-
-          setNearbyServices(nearest);
-
-          if (nearest.length === 0) {
-            setLocationError(
-              'Location permission worked, but no nearby services with map coordinates are available yet.',
-            );
-          }
-        } catch (error) {
-          console.error('Failed to load nearby services:', error);
-          setLocationError('We could not load nearby services right now.');
-        } finally {
-          setLocationLoading(false);
-        }
+      (position) => {
+        setCoords({ lat: position.coords.latitude, lng: position.coords.longitude });
+        setLocationNote('Using your current location for distances.');
+        setLocating(false);
       },
       (error) => {
-        setLocationLoading(false);
-        setLocationError(error.message || 'Unable to access your location.');
+        setLocating(false);
+        setLocationNote(`${error.message || 'Location was not shared'}. You can still search by province.`);
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 },
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 },
     );
   };
 
-  const filteredNearbyServices = nearbyServices.filter((ngo) => {
-    if (!serviceFilter) {
-      return true;
-    }
+  useEffect(() => {
+    if (coords) void search();
+    // Re-rank as soon as a location becomes available.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [coords]);
 
-    return (ngo.services || []).some((service) =>
-      service.toLowerCase().includes(serviceFilter.toLowerCase()),
-    );
-  });
+  const askAi = async () => {
+    if (!need.trim() || results.length === 0) return;
+    setMatching(true);
+    setAiNote('');
+    try {
+      const candidates = results.slice(0, 10).map((ngo) => ({
+        id: ngo.id,
+        name: ngo.name,
+        services: ngo.services,
+        description: ngo.description,
+        city: ngo.city,
+        province: ngo.province,
+        coverage: ngo.coverage,
+        distanceKm: ngo.distanceKm != null ? Number(ngo.distanceKm.toFixed(1)) : null,
+        reasons: ngo.reasons,
+      }));
+      const res = await api.chatWithAgent(need.trim(), {
+        tool_hint: 'ngo',
+        request_context: { candidates },
+        language_pref: localStorage.getItem('allminds_language') || 'en',
+      });
+      setAiMatches(Array.isArray(res.matches) ? res.matches : []);
+      setAiNote(res.response || '');
+    } catch (err) {
+      setAiNote(err instanceof Error ? err.message : 'AI matching failed.');
+    } finally {
+      setMatching(false);
+    }
+  };
+
+  const matchedIds = new Set(aiMatches.map((m) => m.id));
+  const aiPicks = aiMatches
+    .map((m) => ({ match: m, ngo: results.find((n) => n.id === m.id) }))
+    .filter((x): x is { match: AiMatch; ngo: Ngo } => Boolean(x.ngo));
 
   return (
     <DashboardLayout activeTab="professional-development">
       <div className="space-y-6">
         <div>
-          <h2 className="text-3xl font-bold text-slate-800">Professional Development</h2>
-          <p className="text-slate-600 mt-1">
-            Resources to support your growth as an educator
-          </p>
+          <h2 className="text-3xl font-bold text-slate-800">Support &amp; Professional Development</h2>
+          <p className="mt-1 text-slate-600">Find support organisations for your learners and courses for yourself.</p>
         </div>
 
-        <div className="flex gap-2 border-b border-slate-200">
-          <button
-            onClick={() => setActiveTab('training')}
-            className={`px-6 py-3 font-medium transition border-b-2 ${
-              activeTab === 'training'
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-slate-600 hover:text-slate-800'
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <BookOpen className="w-5 h-5" />
-              Training Materials
-            </div>
-          </button>
-          <button
-            onClick={() => setActiveTab('health')}
-            className={`px-6 py-3 font-medium transition border-b-2 ${
-              activeTab === 'health'
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-slate-600 hover:text-slate-800'
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <MapPin className="w-5 h-5" />
-              Health Facilities
-            </div>
-          </button>
+        <div className="flex gap-2 border-b border-slate-200" role="tablist">
+          {([
+            ['support', 'Support Organisations', MapPin],
+            ['training', 'Training', BookOpen],
+          ] as const).map(([id, label, Icon]) => (
+            <button
+              key={id}
+              role="tab"
+              aria-selected={activeTab === id}
+              onClick={() => setActiveTab(id)}
+              className={`border-b-2 px-6 py-3 font-medium transition ${
+                activeTab === id ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-600 hover:text-slate-800'
+              }`}
+            >
+              <span className="flex items-center gap-2">
+                <Icon className="h-5 w-5" /> {label}
+              </span>
+            </button>
+          ))}
         </div>
 
-        {activeTab === 'training' && (
-          <div className="space-y-6">
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
-              <h3 className="font-semibold text-blue-900 mb-2">Curated Learning Resources</h3>
-              <p className="text-sm text-blue-800">
-                Access high-quality courses and training materials specifically selected for
-                teachers working with neurodiverse learners. These resources cover autism, ADHD,
-                dyslexia, sensory processing, and teacher wellbeing.
+        {activeTab === 'support' && (
+          <div className="space-y-5">
+            <div className="rounded-xl border border-slate-200 bg-white p-5">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-[2fr_1fr_auto]">
+                <label className="text-sm">
+                  <span className="mb-1 block font-medium text-slate-700">What does the learner need?</span>
+                  <input
+                    value={need}
+                    onChange={(e) => setNeed(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && void search()}
+                    placeholder="e.g. autism diagnosis, speech therapy, dyslexia support"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  />
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block font-medium text-slate-700">Province</span>
+                  <select value={province} onChange={(e) => setProvince(e.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2">
+                    <option value="">All provinces</option>
+                    {PROVINCES.map((p) => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+                </label>
+                <div className="flex items-end gap-2">
+                  <button type="button" onClick={() => void search()} disabled={searching} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700 disabled:opacity-50">
+                    {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />} Search
+                  </button>
+                </div>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
+                <button type="button" onClick={useMyLocation} disabled={locating} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50">
+                  <LocateFixed className="h-4 w-4" /> {locating ? 'Locating…' : coords ? 'Location on' : 'Use my location (optional)'}
+                </button>
+                <button
+                  type="button"
+                  onClick={askAi}
+                  disabled={!need.trim() || results.length === 0 || matching}
+                  className="inline-flex items-center gap-2 rounded-lg bg-violet-600 px-3 py-1.5 font-medium text-white hover:bg-violet-700 disabled:opacity-50"
+                  title={!need.trim() ? 'Describe the need first' : undefined}
+                >
+                  {matching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Ask AI for the best match
+                </button>
+                {locationNote && <span className="text-slate-500">{locationNote}</span>}
+              </div>
+              <p className="mt-3 text-xs text-slate-500">
+                Ranking: 50% distance, 30% match to the need, 20% teacher rating. Without a location, nearby organisations
+                are ranked by need and rating. Listings come from public directories; confirm details before relying on them.
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {trainingResources.map((resource, index) => (
-                <div
-                  key={index}
-                  className="bg-white rounded-xl border border-slate-200 p-6 hover:shadow-lg transition"
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <BookOpen className="w-6 h-6 text-blue-600" />
-                    </div>
-                    <span
-                      className={`px-2 py-1 rounded text-xs font-medium ${
-                        resource.level === 'Beginner'
-                          ? 'bg-green-100 text-green-700'
-                          : resource.level === 'Intermediate'
-                          ? 'bg-amber-100 text-amber-700'
-                          : 'bg-slate-100 text-slate-700'
-                      }`}
-                    >
-                      {resource.level}
-                    </span>
-                  </div>
+            <LoadError message={loadError} onRetry={() => void search()} />
 
-                  <h4 className="font-semibold text-slate-800 mb-2">{resource.title}</h4>
-                  <p className="text-sm text-slate-600 mb-3">{resource.description}</p>
+            {(aiPicks.length > 0 || aiNote) && (
+              <section className="space-y-3">
+                <h3 className="flex items-center gap-2 text-lg font-semibold text-violet-800">
+                  <Sparkles className="h-5 w-5" /> AI recommendations
+                </h3>
+                {aiNote && <p className="text-sm text-slate-600">{aiNote}</p>}
+                {aiPicks.map(({ match, ngo }) => (
+                  <NgoCard key={`ai-${ngo.id}`} ngo={ngo} aiReason={match.why} onReviewed={() => void search(true)} />
+                ))}
+              </section>
+            )}
 
-                  <div className="flex items-center justify-between text-sm text-slate-500 mb-4">
-                    <span>{resource.provider}</span>
-                    <span>{resource.duration}</span>
-                  </div>
+            <section className="space-y-3">
+              <h3 className="text-lg font-semibold text-slate-800">
+                {searched ? `${results.length} organisation${results.length === 1 ? '' : 's'}` : 'Organisations'}
+              </h3>
+              {searched && results.length === 0 && !loadError && (
+                <p className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">
+                  No organisations match yet. Try another province or a broader need such as &quot;autism&quot; or &quot;therapy&quot;.
+                </p>
+              )}
+              {results
+                .filter((ngo) => !matchedIds.has(ngo.id))
+                .map((ngo) => (
+                  <NgoCard key={ngo.id} ngo={ngo} onReviewed={() => void search(true)} />
+                ))}
+            </section>
+          </div>
+        )}
 
+        {activeTab === 'training' && (
+          <div className="space-y-4">
+            <LoadError message={trainingError} onRetry={() => void loadTraining()} />
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              {training.map((resource) => (
+                <article key={resource.id} className="rounded-xl border border-slate-200 bg-white p-5">
+                  <p className="text-xs font-medium uppercase tracking-wide text-blue-600">{resource.topic}</p>
+                  <h4 className="mt-1 text-lg font-semibold text-slate-800">{resource.title}</h4>
+                  <p className="text-sm text-slate-500">{resource.provider}</p>
+                  {resource.description && <p className="mt-2 text-sm text-slate-700">{resource.description}</p>}
+                  <p className="mt-2 text-xs text-slate-500">
+                    {[resource.duration, resource.cost].filter(Boolean).join(' · ')} · link checked {formatDate(resource.last_checked)}
+                  </p>
                   <a
                     href={resource.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition flex items-center justify-center gap-2"
+                    className="mt-3 inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
                   >
-                    Access Course
-                    <ExternalLink className="w-4 h-4" />
+                    Open <ExternalLink className="h-4 w-4" />
                   </a>
-                </div>
+                </article>
               ))}
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'health' && (
-          <div className="space-y-6">
-            <div className="bg-green-50 border border-green-200 rounded-lg p-6">
-              <h3 className="font-semibold text-green-900 mb-2">Find Nearby Support</h3>
-              <p className="text-sm text-green-800">
-                Locate health facilities and support services near you to ensure learners receive
-                the care they need when additional professional support is required.
-              </p>
-            </div>
-
-            <div className="bg-white rounded-xl border border-slate-200 p-6">
-              <div className="text-center py-12">
-                <MapPin className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-                <h4 className="text-lg font-semibold text-slate-800 mb-2">
-                  Location-Based Services
-                </h4>
-                <p className="text-slate-600 mb-6 max-w-md mx-auto">
-                  This feature will show nearby health facilities, pediatricians, child
-                  psychologists, and special education support services based on your location.
-                </p>
-                <button
-                  onClick={enableLocationServices}
-                  disabled={locationLoading}
-                  className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-medium transition inline-flex items-center gap-2 disabled:opacity-50"
-                >
-                  <MapPin className="w-5 h-5" />
-                  {locationLoading ? 'Locating Nearby Services...' : 'Enable Location Services'}
-                </button>
-              </div>
-
-              <div className="border-t border-slate-200 mt-6 pt-6">
-                {locationError && (
-                  <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-                    {locationError}
-                  </div>
-                )}
-
-                {nearbyServices.length > 0 && (
-                  <div className="mb-6">
-                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
-                      <h4 className="font-semibold text-slate-800">Nearest Support Services</h4>
-                      <input
-                        type="text"
-                        value={serviceFilter}
-                        onChange={(event) => setServiceFilter(event.target.value)}
-                        className="w-full md:w-72 px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition"
-                        placeholder="Filter by service"
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-1 xl:grid-cols-[1.1fr_0.9fr] gap-4">
-                      <div className="space-y-4">
-                        {filteredNearbyServices.map((ngo) => (
-                          <div key={ngo.id} className="p-4 bg-slate-50 rounded-lg">
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <h5 className="font-medium text-slate-800">{ngo.name}</h5>
-                                <p className="text-sm text-slate-600">
-                                  {ngo.city}, {ngo.province}
-                                </p>
-                              </div>
-                              <span className="text-xs font-medium text-green-700 bg-green-100 px-2 py-1 rounded-full">
-                                {(ngo.distanceKm || 0).toFixed(1)} km
-                              </span>
-                            </div>
-                            {ngo.services && ngo.services.length > 0 && (
-                              <p className="text-sm text-slate-600 mt-2">
-                                {ngo.services.slice(0, 4).join(', ')}
-                              </p>
-                            )}
-                            <div className="mt-3 flex flex-wrap gap-2">
-                              {ngo.contact_phone && (
-                                <span className="text-sm text-slate-500">{ngo.contact_phone}</span>
-                              )}
-                              {ngo.latitude && ngo.longitude && (
-                                <a
-                                  href={`https://www.google.com/maps/search/?api=1&query=${ngo.latitude},${ngo.longitude}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-sm text-green-700 hover:text-green-800 font-medium"
-                                >
-                                  Open in Maps
-                                </a>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-
-                      <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-green-50 to-white p-4">
-                        <h5 className="font-semibold text-slate-800 mb-3">Service Map Snapshot</h5>
-                        <div className="space-y-3">
-                          {filteredNearbyServices.slice(0, 5).map((ngo, index) => (
-                            <div
-                              key={ngo.id}
-                              className="flex items-center justify-between rounded-lg bg-white px-3 py-3 border border-slate-200"
-                            >
-                              <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-sm font-semibold">
-                                  {index + 1}
-                                </div>
-                                <div>
-                                  <p className="text-sm font-medium text-slate-800">{ngo.name}</p>
-                                  <p className="text-xs text-slate-500">
-                                    {ngo.city}, {ngo.province}
-                                  </p>
-                                </div>
-                              </div>
-                              <span className="text-xs text-slate-500">
-                                {(ngo.distanceKm || 0).toFixed(1)} km
-                              </span>
-                            </div>
-                          ))}
-                          {filteredNearbyServices.length === 0 && (
-                            <p className="text-sm text-slate-500">
-                              No nearby services match that filter yet.
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <h4 className="font-semibold text-slate-800 mb-4">Common Support Services</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="p-4 bg-slate-50 rounded-lg">
-                    <h5 className="font-medium text-slate-800 mb-2">
-                      Child Psychologists
-                    </h5>
-                    <p className="text-sm text-slate-600">
-                      Specialists in child development and behavioral support
-                    </p>
-                  </div>
-                  <div className="p-4 bg-slate-50 rounded-lg">
-                    <h5 className="font-medium text-slate-800 mb-2">
-                      Occupational Therapists
-                    </h5>
-                    <p className="text-sm text-slate-600">
-                      Support for sensory and motor skill development
-                    </p>
-                  </div>
-                  <div className="p-4 bg-slate-50 rounded-lg">
-                    <h5 className="font-medium text-slate-800 mb-2">Speech Therapists</h5>
-                    <p className="text-sm text-slate-600">
-                      Communication and language development specialists
-                    </p>
-                  </div>
-                  <div className="p-4 bg-slate-50 rounded-lg">
-                    <h5 className="font-medium text-slate-800 mb-2">
-                      Special Education Consultants
-                    </h5>
-                    <p className="text-sm text-slate-600">
-                      Expert guidance on inclusive education strategies
-                    </p>
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
         )}

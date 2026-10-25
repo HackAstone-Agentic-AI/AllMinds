@@ -17,7 +17,7 @@ import {
   X,
 } from 'lucide-react';
 import { api } from '@/lib/api';
-import { LanguageCode, LANGUAGES } from '@/lib/i18n/translations';
+import { LanguageCode, LANGUAGES, languageOptionLabel } from '@/lib/i18n/translations';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import {
   TextScale,
@@ -319,7 +319,7 @@ export default function SettingsPanel({
                   >
                     {LANGUAGES.map((language) => (
                       <option key={language.code} value={language.code}>
-                        {language.label}
+                        {languageOptionLabel(language.code, language.label)}
                       </option>
                     ))}
                   </select>

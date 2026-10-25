@@ -40,11 +40,16 @@ export default function LearnerCard({ learner, onUpdate }: LearnerCardProps) {
           <div className="mb-4 p-3 bg-slate-50 rounded-lg">
             <p className="text-xs font-medium text-slate-600 mb-2">Profile Information</p>
             <div className="space-y-1">
-              {Object.entries(learner.profile_data).slice(0, 3).map(([key, value]) => (
-                <div key={key} className="text-xs text-slate-600">
-                  <span className="font-medium capitalize">{key}:</span> {String(value)}
-                </div>
-              ))}
+              {Object.entries(learner.profile_data)
+                // 'demo' is an internal marker for synthetic learners, not profile information.
+                .filter(([key]) => key !== 'demo')
+                .slice(0, 3)
+                .map(([key, value]) => (
+                  <div key={key} className="text-xs text-slate-600">
+                    <span className="font-medium capitalize">{key}:</span>{' '}
+                    {Array.isArray(value) ? value.join(', ') : String(value)}
+                  </div>
+                ))}
             </div>
           </div>
         )}

@@ -20,15 +20,21 @@ export default function LearnerProgressModal({
   const learnerName = getLearnerDisplayName(learner);
   const learnerId = getLearnerSecondaryLabel(learner);
   const [progressRecords, setProgressRecords] = useState<LearnerProgress[]>([]);
-  const [newProgress, setNewProgress] = useState({
+  const emptyProgress = {
     area: '',
     level: '',
     notes: '',
     achievements: '',
-  });
+    engagementLevel: '',
+    taskCompletionLevel: '',
+    attendance: '',
+  };
+  const [newProgress, setNewProgress] = useState(emptyProgress);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
-  const generateAiSuggestions = () => {
+  // Rule-based next-step tips (not AI): two template sentences chosen by area and level.
+  const generateNextStepTips = () => {
     if (!newProgress.area || !newProgress.level) {
       return '';
     }
@@ -49,6 +55,7 @@ export default function LearnerProgressModal({
       setProgressRecords(data);
     } catch (err) {
       console.error('Failed to load progress:', err);
+      setSaveError(err instanceof Error ? `Could not load history: ${err.message}` : 'Could not load history.');
     }
   }, [learner.id]);
 
@@ -57,27 +64,26 @@ export default function LearnerProgressModal({
   }, [loadProgress]);
 
   const handleSaveProgress = async () => {
-    if (!newProgress.area.trim()) return;
+    if (!newProgress.area.trim() || !newProgress.level) return;
     setSaving(true);
+    setSaveError('');
     try {
-      const aiSuggestions = generateAiSuggestions();
       await api.createProgress(learner.id, {
         area: newProgress.area,
         level: newProgress.level,
         achievements: newProgress.achievements,
         notes: newProgress.notes,
-        engagementLevel: '',
-        engagementDescription: '',
-        attendance: '',
-        taskCompletionLevel: '',
-        taskCompletionDescription: '',
-        aiSuggestions,
+        engagementLevel: newProgress.engagementLevel,
+        attendance: newProgress.attendance,
+        taskCompletionLevel: newProgress.taskCompletionLevel,
+        nextStepTips: generateNextStepTips(),
       });
-      setNewProgress({ area: '', level: '', notes: '', achievements: '' });
+      setNewProgress(emptyProgress);
       await loadProgress();
       onUpdate();
     } catch (err) {
       console.error('Failed to save progress:', err);
+      setSaveError(err instanceof Error ? err.message : 'Could not save this progress record.');
     } finally {
       setSaving(false);
     }
@@ -152,6 +158,60 @@ export default function LearnerProgressModal({
                 </select>
               </div>
 
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label htmlFor="progress-engagement" className="block text-sm font-medium text-slate-700 mb-2">
+                    Engagement (1-5)
+                  </label>
+                  <select
+                    id="progress-engagement"
+                    value={newProgress.engagementLevel}
+                    onChange={(e) => setNewProgress({ ...newProgress, engagementLevel: e.target.value })}
+                    className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+                  >
+                    <option value="">Not observed</option>
+                    <option value="1">1 - Very low</option>
+                    <option value="2">2 - Low</option>
+                    <option value="3">3 - Some</option>
+                    <option value="4">4 - Good</option>
+                    <option value="5">5 - Fully engaged</option>
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="progress-completion" className="block text-sm font-medium text-slate-700 mb-2">
+                    Task completion (1-5)
+                  </label>
+                  <select
+                    id="progress-completion"
+                    value={newProgress.taskCompletionLevel}
+                    onChange={(e) => setNewProgress({ ...newProgress, taskCompletionLevel: e.target.value })}
+                    className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+                  >
+                    <option value="">Not observed</option>
+                    <option value="1">1 - Not started</option>
+                    <option value="2">2 - Started</option>
+                    <option value="3">3 - About half</option>
+                    <option value="4">4 - Mostly done</option>
+                    <option value="5">5 - Completed</option>
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="progress-attendance" className="block text-sm font-medium text-slate-700 mb-2">
+                    Attendance
+                  </label>
+                  <select
+                    id="progress-attendance"
+                    value={newProgress.attendance}
+                    onChange={(e) => setNewProgress({ ...newProgress, attendance: e.target.value })}
+                    className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+                  >
+                    <option value="">Not recorded</option>
+                    <option value="present">Present</option>
+                    <option value="not present">Absent</option>
+                  </select>
+                </div>
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">
                   Achievements
@@ -180,11 +240,14 @@ export default function LearnerProgressModal({
 
               <button
                 onClick={handleSaveProgress}
-                disabled={saving || !newProgress.area}
+                disabled={saving || !newProgress.area || !newProgress.level}
                 className="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-3 px-4 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {saving ? 'Saving...' : 'Save Progress Record'}
               </button>
+              {saveError && (
+                <p role="alert" className="text-sm text-red-700 bg-red-50 rounded-lg px-3 py-2">{saveError}</p>
+              )}
             </div>
           </div>
 
@@ -224,6 +287,18 @@ export default function LearnerProgressModal({
                         {new Date(record.recorded_at).toLocaleDateString()}
                       </span>
                     </div>
+                    {(record.progress_data.engagementLevel || record.progress_data.taskCompletionLevel || record.progress_data.attendance) && (
+                      <p className="text-xs text-slate-500 mb-1">
+                        {record.progress_data.engagementLevel && `Engagement ${record.progress_data.engagementLevel}/5`}
+                        {record.progress_data.taskCompletionLevel && ` · Completion ${record.progress_data.taskCompletionLevel}/5`}
+                        {record.progress_data.attendance && ` · ${record.progress_data.attendance === 'present' ? 'Present' : 'Absent'}`}
+                      </p>
+                    )}
+                    {record.progress_data.nextStepTips && (
+                      <p className="text-xs text-slate-500 mb-1">
+                        <span className="font-medium">Next-step tips:</span> {record.progress_data.nextStepTips}
+                      </p>
+                    )}
                     {record.progress_data.achievements && (
                       <p className="text-sm text-slate-600 mb-1">
                         <span className="font-medium">Achievements:</span>{' '}

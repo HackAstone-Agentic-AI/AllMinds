@@ -21,6 +21,8 @@ import {
 import { useRouter, useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
+import AiProgress from '@/components/AiProgress';
+import { buildClassPackPdf } from '@/lib/classPack';
 
 interface TeacherProfileSummary {
   id: number;
@@ -54,6 +56,7 @@ function AssessmentPlannerInner() {
   const [youtubeLinks, setYoutubeLinks] = useState<YoutubeLink[]>([]);
   const [imageAids, setImageAids] = useState<ImageAid[]>([]);
   const [mediaDiagnostics, setMediaDiagnostics] = useState<string[]>([]);
+  const [curriculumSources, setCurriculumSources] = useState<{ document: string; page: number | null; excerpt: string }[]>([]);
   const [planTitle, setPlanTitle] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -157,6 +160,7 @@ function AssessmentPlannerInner() {
       setYoutubeLinks(Array.isArray(response.youtube_links) ? response.youtube_links : []);
       setImageAids(Array.isArray(response.image_aids) ? response.image_aids : []);
       setMediaDiagnostics(Array.isArray(response.media_diagnostics) ? response.media_diagnostics : []);
+      setCurriculumSources(Array.isArray(response.sources) ? response.sources : []);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to generate the plan.');
     } finally {
@@ -198,6 +202,49 @@ function AssessmentPlannerInner() {
       setError(requestError instanceof Error ? requestError.message : 'Failed to delete the plan.');
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const [packBusy, setPackBusy] = useState(false);
+
+  // One click: visual supports and a family letter for the same topic, generated in
+  // parallel and bundled with the plan into a single PDF.
+  const createClassPack = async () => {
+    if (!generatedPlan) return;
+    setPackBusy(true);
+    setError('');
+    const language = localStorage.getItem('allminds_language') || 'en';
+    const topicLine = `Grade ${plannerInput.grade} ${plannerInput.subject}: ${plannerInput.topic}`;
+    try {
+      const [visual, letter] = await Promise.allSettled([
+        api.chatWithAgent(`Visual supports for a lesson on ${topicLine}`, { tool_hint: 'visual', language_pref: language }),
+        api.chatWithAgent(
+          `This week the class is learning ${topicLine}. Explain what we are learning and suggest one or two simple ways families can support it at home.`,
+          { tool_hint: 'parent', communication_type: 'progress', language_pref: language },
+        ),
+      ]);
+      const visualResult = visual.status === 'fulfilled' ? visual.value : null;
+      const letterResult = letter.status === 'fulfilled' ? letter.value : null;
+      const blob = await buildClassPackPdf(planTitle || `Class pack: ${topicLine}`, [
+        { title: 'Lesson plan', text: generatedPlan, images: imageAids },
+        {
+          title: 'Visual supports',
+          text: visualResult?.response || 'Visual supports could not be generated this time.',
+          images: Array.isArray(visualResult?.image_aids) ? visualResult.image_aids : [],
+        },
+        { title: 'Letter for families', text: letterResult?.response || 'The family letter could not be generated this time.' },
+      ]);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `class-pack-${plannerInput.topic.replace(/[^a-z0-9]/gi, '-').toLowerCase() || 'lesson'}.pdf`;
+      link.click();
+      URL.revokeObjectURL(url);
+      if (!visualResult || !letterResult) setError('The class pack was created, but one section could not be generated.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create the class pack.');
+    } finally {
+      setPackBusy(false);
     }
   };
 
@@ -607,16 +654,16 @@ function AssessmentPlannerInner() {
           {/* ── Right: output ── */}
           <div className="space-y-4">
             {/* Generating indicator */}
-            {isGenerating && (
-              <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin flex-shrink-0" />
-                  <p className="text-sm text-purple-800">
-                    Generating lesson plan, YouTube links, and AI visual aid images…
-                  </p>
-                </div>
-              </div>
-            )}
+            <AiProgress
+              active={isGenerating}
+              note="Lesson plans usually take 30-90 seconds. Repeated requests return instantly."
+              steps={[
+                { label: 'Checking the DCAPS curriculum', at: 0 },
+                { label: 'Writing the plan with Gemini 2.5 Pro', at: 4 },
+                { label: 'Finding classroom videos and creating visual aids', at: 12 },
+                { label: 'Checking the plan and adding accommodations', at: 35 },
+              ]}
+            />
 
             {/* Plan text */}
             <div className="bg-white rounded-xl border border-slate-200 p-6 min-h-[360px] flex flex-col">
@@ -636,6 +683,15 @@ function AssessmentPlannerInner() {
                       PDF
                     </button>
                     <button
+                      onClick={() => void createClassPack()}
+                      disabled={packBusy}
+                      title="Plan + visual supports + family letter in one PDF"
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-violet-600 rounded-lg hover:bg-violet-700 transition disabled:opacity-50"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      {packBusy ? 'Building pack…' : 'Class pack'}
+                    </button>
+                    <button
                       onClick={exportToWord}
                       title="Export as Word document"
                       className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 border border-slate-300 rounded-lg hover:bg-slate-50 transition"
@@ -648,7 +704,25 @@ function AssessmentPlannerInner() {
               </div>
 
               {generatedPlan ? (
-                <div className="flex-1 overflow-y-auto space-y-0.5 pr-1">{planSections}</div>
+                <div className="flex-1 overflow-y-auto space-y-0.5 pr-1">
+                  {planSections}
+                  {curriculumSources.length > 0 && (
+                    <div className="mt-4 border-t border-slate-200 pt-3">
+                      <p className="text-xs font-semibold text-slate-600">Grounded in the curriculum</p>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {curriculumSources.map((src) => (
+                          <span
+                            key={`${src.document}-${src.page}`}
+                            title={src.excerpt}
+                            className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs text-emerald-800"
+                          >
+                            {src.document}{src.page ? ` p. ${src.page}` : ''}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               ) : (
                 <div className="flex-1 flex flex-col items-center justify-center text-slate-500">
                   <FileText className="w-14 h-14 mx-auto mb-4 text-slate-300" />

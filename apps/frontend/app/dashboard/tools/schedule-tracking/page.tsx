@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
+import LoadError from '@/components/LoadError';
+import VisualSchedule from '@/components/VisualSchedule';
 import { LearnerProfile, LearnerScheduleItem } from '@/types/database';
 import { AlertCircle, ArrowLeft, Calendar, Check, Clock3, Pencil, Plus, Trash2, Users, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -15,6 +17,7 @@ const mapLearnerRow = (learner: LearnerProfile) => ({
 
 export default function ScheduleTrackingPage() {
   const [learnerProfiles, setLearnerProfiles] = useState<LearnerProfile[]>([]);
+  const [loadError, setLoadError] = useState('');
   const [selectedLearnerId, setSelectedLearnerId] = useState<number | null>(null);
   const [loadingLearners, setLoadingLearners] = useState(true);
   const [scheduleItems, setScheduleItems] = useState<LearnerScheduleItem[]>([]);
@@ -29,6 +32,10 @@ export default function ScheduleTrackingPage() {
   const [calendarConnected, setCalendarConnected] = useState(false);
   const [calendarEmail, setCalendarEmail] = useState<string | null>(null);
   const [syncNotice, setSyncNotice] = useState('');
+  const [view, setView] = useState<'list' | 'visual'>('visual');
+  const todayIso = () => new Intl.DateTimeFormat('en-CA').format(new Date());
+  const [syncDate, setSyncDate] = useState(todayIso);
+  const [syncRepeat, setSyncRepeat] = useState<'none' | 'weekdays' | 'daily'>('weekdays');
   const router = useRouter();
 
   useEffect(() => {
@@ -58,6 +65,7 @@ export default function ScheduleTrackingPage() {
   };
 
   const loadLearnersFromDatabase = useCallback(async () => {
+    setLoadError('');
     setLoadingLearners(true);
     try {
       const data = await api.getLearners();
@@ -68,6 +76,7 @@ export default function ScheduleTrackingPage() {
       }
     } catch (error) {
       console.error('Failed to load learners:', error);
+      setLoadError(error instanceof Error ? error.message : 'Please try again.');
     } finally {
       setLoadingLearners(false);
     }
@@ -139,8 +148,15 @@ export default function ScheduleTrackingPage() {
             title: newItem.title.trim(),
             start_time: newItem.time.trim(),
             notes: newItem.notes.trim() || undefined,
+            date: syncDate,
+            duration_minutes: 30,
+            recurrence: syncRepeat,
           });
-          setSyncNotice('Added to your Google Calendar.');
+          setSyncNotice(
+            syncRepeat === 'none'
+              ? `Added to your Google Calendar on ${syncDate}.`
+              : `Added to your Google Calendar from ${syncDate}, repeating ${syncRepeat === 'weekdays' ? 'on weekdays' : 'daily'}.`,
+          );
         } catch {
           setSyncNotice('Saved here, but it could not be added to Google Calendar. Try reconnecting in Settings.');
         }
@@ -212,6 +228,7 @@ export default function ScheduleTrackingPage() {
   return (
     <DashboardLayout activeTab="tools">
       <div className="space-y-6">
+        <LoadError message={loadError} onRetry={() => void loadLearnersFromDatabase()} />
         <div className="flex items-center gap-4">
           <button
             onClick={() => router.push('/dashboard/tools')}
@@ -365,6 +382,32 @@ export default function ScheduleTrackingPage() {
               </div>
             </div>
 
+            {calendarConnected && (
+              <div className="mb-4 grid grid-cols-1 gap-4 rounded-lg border border-teal-100 bg-teal-50/50 p-3 md:grid-cols-2">
+                <label className="text-sm">
+                  <span className="mb-1 block font-medium text-slate-700">Calendar start date</span>
+                  <input
+                    type="date"
+                    value={syncDate}
+                    onChange={(event) => setSyncDate(event.target.value)}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  />
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block font-medium text-slate-700">Repeat in calendar</span>
+                  <select
+                    value={syncRepeat}
+                    onChange={(event) => setSyncRepeat(event.target.value as 'none' | 'weekdays' | 'daily')}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
+                  >
+                    <option value="weekdays">Every school day (Mon-Fri)</option>
+                    <option value="daily">Every day</option>
+                    <option value="none">Only once</option>
+                  </select>
+                </label>
+              </div>
+            )}
+
             <div className="mb-6">
               <label className="block text-sm font-medium text-slate-700 mb-2">Notes</label>
               <textarea
@@ -396,6 +439,29 @@ export default function ScheduleTrackingPage() {
                 </p>
               </div>
             ) : (
+              <div className="space-y-4">
+              <div className="flex gap-2" role="tablist" aria-label="Schedule view">
+                {(['visual', 'list'] as const).map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    role="tab"
+                    aria-selected={view === option}
+                    onClick={() => setView(option)}
+                    className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+                      view === option ? 'bg-purple-600 text-white' : 'border border-slate-300 text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    {option === 'visual' ? 'Visual schedule' : 'Edit list'}
+                  </button>
+                ))}
+              </div>
+              {view === 'visual' ? (
+                <VisualSchedule
+                  items={scheduleItems}
+                  learnerName={selectedLearner ? getLearnerDisplayName(selectedLearner) : 'Learner'}
+                />
+              ) : (
               <div className="space-y-3">
                 {scheduleItems.map((item) => (
                   <div
@@ -483,6 +549,8 @@ export default function ScheduleTrackingPage() {
                     )}
                   </div>
                 ))}
+              </div>
+              )}
               </div>
             )}
           </div>
