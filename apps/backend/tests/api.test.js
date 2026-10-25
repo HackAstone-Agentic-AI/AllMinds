@@ -6,6 +6,7 @@ const assert = require('node:assert/strict');
 const http = require('node:http');
 
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-0123456789abcdef0123456789abcdef';
+process.env.AUTH_RATE_LIMIT_MAX = '1000';
 
 let fakeAgentRequests = [];
 const fakeAgent = http.createServer((req, res) => {
@@ -216,4 +217,61 @@ test('Agent proxy: forwards with the user as thread, records usage, streams and 
 test('Admin stats require the admin role', async () => {
     const token = await newTeacher('admin');
     assert.equal((await call('GET', '/api/stats/admin', { token })).status, 403);
+});
+
+// ── Failed cases from All_Minds_AI_Testing_Report_3 ──────────────────────────
+
+test('TC-LPM-003: an empty upload is rejected', async () => {
+    const token = await newTeacher('lpm3');
+    const res = await call('POST', '/api/learners/bulk', { token, body: { learners: [] } });
+    assert.equal(res.status, 400);
+});
+
+test('TC-LPM-004: rows without a learner ID or name are rejected and reported', async () => {
+    const token = await newTeacher('lpm4');
+    const res = await call('POST', '/api/learners/bulk', {
+        token,
+        body: {
+            learners: [
+                { anonymous_id: 'L-1', profile_data: { pseudonym: 'Learner A' } },
+                { profile_data: { grade: 'Grade 3' } },
+                { anonymous_id: 'L-3', profile_data: { grade: 'Grade 1' } },
+                { profile_data: { pseudonym: 'Learner D' } },
+            ],
+        },
+    });
+    assert.equal(res.status, 201, res.text);
+    assert.equal(res.json.inserted, 3);
+    assert.deepEqual(res.json.invalid_rows, [2]);
+    assert.match(res.json.message, /1 row without a learner ID or name rejected/);
+    const all = await call('POST', '/api/learners/bulk', { token, body: { learners: [{ profile_data: { grade: 'Grade 3' } }] } });
+    assert.equal(all.status, 400);
+});
+
+test('TC-LPM-005: duplicate learner IDs are skipped and reported', async () => {
+    const token = await newTeacher('lpm5');
+    const rows = [
+        { anonymous_id: 'D-1', profile_data: { pseudonym: 'A' } },
+        { anonymous_id: 'D-2', profile_data: { pseudonym: 'B' } },
+        { anonymous_id: 'D-1', profile_data: { pseudonym: 'A again' } },
+    ];
+    const first = await call('POST', '/api/learners/bulk', { token, body: { learners: rows } });
+    assert.equal(first.json.inserted, 2);
+    assert.match(first.json.message, /1 duplicate skipped/);
+    const again = await call('POST', '/api/learners/bulk', { token, body: { learners: rows } });
+    assert.equal(again.json.inserted, 0);
+    assert.equal((await call('GET', '/api/learners', { token })).json.length, 2);
+});
+
+test('TC-SCH-006: a second schedule item for the same learner and time is rejected', async () => {
+    const token = await newTeacher('sch6');
+    const learner = (await call('POST', '/api/learners', { token, body: { anonymous_id: 'S-1', profile_data: {} } })).json;
+    const item = { learner_id: learner.id, title: 'Reading', start_time: '09:00' };
+    assert.equal((await call('POST', '/api/activities/schedule-items', { token, body: item })).status, 201);
+    const duplicate = await call('POST', '/api/activities/schedule-items', { token, body: { ...item, title: 'Maths' } });
+    assert.equal(duplicate.status, 409);
+    assert.match(duplicate.json.error, /already exists at that time/);
+    const other = (await call('POST', '/api/activities/schedule-items', { token, body: { ...item, start_time: '10:00' } })).json;
+    const moved = await call('PATCH', `/api/activities/schedule-items/${other.id}`, { token, body: { start_time: '09:00' } });
+    assert.equal(moved.status, 409);
 });

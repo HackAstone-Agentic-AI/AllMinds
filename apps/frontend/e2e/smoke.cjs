@@ -196,6 +196,69 @@ const assert = (condition, message) => {
     await page.getByText('AI replies; interface partly English').first().waitFor();
   });
 
+  // ── Failed cases from All_Minds_AI_Testing_Report_3 ──────────────────────
+  const ExcelJS = require('exceljs');
+  const writeXlsx = async (name, rows) => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Learners');
+    rows.forEach((row) => sheet.addRow(row));
+    const file = path.join(SHOTS, name);
+    await workbook.xlsx.writeFile(file);
+    return file;
+  };
+  const openUpload = async (file) => {
+    await page.goto(`${FRONTEND}/dashboard/tools/learner-profiles`);
+    await page.getByText(/Learner Cards/).waitFor();
+    await page.setInputFiles('input[type="file"]', file);
+  };
+
+  await check('TC-LPM-002/003: wrong file types and empty spreadsheets are rejected', async () => {
+    const pdf = path.join(SHOTS, 'notes.pdf');
+    fs.writeFileSync(pdf, '%PDF-1.4');
+    await openUpload(pdf);
+    await page.getByText('Upload a CSV or XLSX learner file.').waitFor();
+    await openUpload(await writeXlsx('empty.xlsx', []));
+    await page.getByText('The spreadsheet did not contain any learner rows.').waitFor();
+    await openUpload(await writeXlsx('headers-only.xlsx', [['anonymous_id', 'pseudonym']]));
+    await page.getByText('The spreadsheet did not contain any learner rows.').waitFor();
+  });
+
+  await check('TC-LPM-004: rows without a learner ID or name are skipped and reported', async () => {
+    await openUpload(await writeXlsx('missing.xlsx', [
+      ['anonymous_id', 'pseudonym', 'grade'], ['M-1', 'Learner M', 'Grade 2'], ['', '', 'Grade 3'],
+    ]));
+    await page.getByText('Row 3: No learner ID or name').waitFor();
+    await page.getByRole('button', { name: 'Upload 1 learner(s)' }).click();
+    await page.getByText(/1 row\(s\) were skipped/).waitFor({ timeout: 15000 });
+    await shot('07-tc-lpm-004');
+  });
+
+  await check('TC-LPM-005: duplicate learner IDs are flagged before upload', async () => {
+    await openUpload(await writeXlsx('dupes.xlsx', [
+      ['anonymous_id', 'pseudonym'], ['M-1', 'Again'], ['N-1', 'New'], ['N-1', 'New again'],
+    ]));
+    await page.getByText('Row 2: ID "M-1" already exists in your learner profiles').waitFor();
+    await page.getByText('Row 4: Duplicate ID "N-1" (same as row 3)').waitFor();
+    await page.getByRole('button', { name: 'Upload 1 learner(s)' }).waitFor();
+    await shot('08-tc-lpm-005');
+  });
+
+  await check('TC-SCH-006: a duplicate schedule item is rejected with a message', async () => {
+    await page.goto(`${FRONTEND}/dashboard/tools/schedule-tracking`);
+    const select = page.locator('select').first();
+    await select.waitFor();
+    const value = await select.locator('option', { hasText: 'Learner M' }).getAttribute('value');
+    await select.selectOption(value);
+    for (let i = 0; i < 2; i += 1) {
+      await page.fill('input[placeholder="e.g. Reading group"]', i ? 'Maths' : 'Reading');
+      await page.fill('input[type="time"]', '09:00');
+      await page.getByRole('button', { name: 'Add item' }).click();
+      if (i === 0) await page.getByText('Reading').first().waitFor();
+    }
+    await page.getByText('A schedule item for this learner already exists at that time').waitFor({ timeout: 15000 });
+    await shot('09-tc-sch-006');
+  });
+
   await browser.close();
   const failed = results.filter((r) => !r.ok);
   console.log(`\n${results.length - failed.length}/${results.length} checks passed. Screenshots: ${SHOTS}`);

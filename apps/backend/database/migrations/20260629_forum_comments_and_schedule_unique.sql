@@ -10,6 +10,14 @@ CREATE TABLE IF NOT EXISTS forum_comments (
 CREATE INDEX IF NOT EXISTS idx_forum_comments_post_id ON forum_comments(post_id);
 
 -- Group 1 (TC-SCH-006): Prevent duplicate schedule entries for same learner at the same time
+-- Databases that ran without this constraint may already hold duplicates, which would
+-- make ADD CONSTRAINT fail. Keep the earliest item for each learner and time.
+DELETE FROM learner_schedule_items a
+USING learner_schedule_items b
+WHERE a.learner_id = b.learner_id
+  AND a.start_time = b.start_time
+  AND a.id > b.id;
+
 -- PostgreSQL has no ADD CONSTRAINT IF NOT EXISTS, so guard with pg_constraint.
 DO $$
 BEGIN

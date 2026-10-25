@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import LoadError from '@/components/LoadError';
 import { LearnerProfile } from '@/types/database';
@@ -17,6 +17,7 @@ import {
   applyColumnActions,
   detectPiiColumns,
   toCsv,
+  validateLearnerRows,
 } from '@/lib/learnerImport';
 
 type ImportPreview = {
@@ -39,6 +40,16 @@ export default function LearnerProfilesPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadMessage, setUploadMessage] = useState('');
   const [preview, setPreview] = useState<ImportPreview | null>(null);
+
+  // Rows as they will be uploaded (after the teacher's column choices), and which of them
+  // are valid: each needs an ID or a name, and IDs must be new and unique in the file.
+  const previewCheck = useMemo(() => {
+    if (!preview) return null;
+    const transformed = applyColumnActions(preview.rows, preview.actions);
+    const existingIds = new Set(learners.map((learner) => learner.anonymous_id.toLowerCase()));
+    const { validIndexes, issues } = validateLearnerRows(transformed, existingIds);
+    return { transformed, validIndexes, issues, issueRows: new Set(issues.map((issue) => issue.row)) };
+  }, [preview, learners]);
   const router = useRouter();
 
   const loadLearners = useCallback(async () => {
@@ -160,7 +171,11 @@ export default function LearnerProfilesPage() {
     const data = await file.arrayBuffer();
     const { default: ExcelJS } = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(data);
+    try {
+      await workbook.xlsx.load(data);
+    } catch {
+      throw new Error('This file could not be read. Check that it is a valid .xlsx or .csv file and try again.');
+    }
     const worksheet = workbook.worksheets[0];
 
     if (!worksheet) {
@@ -235,17 +250,20 @@ export default function LearnerProfilesPage() {
   };
 
   const confirmUpload = async () => {
-    if (!preview) return;
+    if (!preview || !previewCheck) return;
+    const { transformed, validIndexes, issues } = previewCheck;
+    if (validIndexes.length === 0) return;
     setUploading(true);
     setUploadMessage('');
     try {
-      const learnersToUpload = buildImportedLearners(applyColumnActions(preview.rows, preview.actions));
+      const learnersToUpload = buildImportedLearners(validIndexes.map((index) => transformed[index]));
       const result = await api.bulkUploadLearners(learnersToUpload);
       await loadLearners();
+      const skipped = issues.length ? ` ${issues.length} row(s) were skipped (see the reasons in the preview).` : '';
       const removed = result?.pii_values_removed
         ? ` ${result.pii_values_removed} value(s) with contact or ID details were removed by the server.`
         : '';
-      setUploadMessage(`${result?.message || `Uploaded ${learnersToUpload.length} learner row(s)`}.${removed}`);
+      setUploadMessage(`${result?.message || `Uploaded ${learnersToUpload.length} learner row(s)`}.${skipped}${removed}`);
       setPreview(null);
     } catch (err) {
       console.error('Upload failed:', err);
@@ -382,10 +400,10 @@ export default function LearnerProfilesPage() {
                 <button
                   type="button"
                   onClick={() => void confirmUpload()}
-                  disabled={uploading}
+                  disabled={uploading || !previewCheck || previewCheck.validIndexes.length === 0}
                   className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
                 >
-                  {uploading ? 'Uploading…' : `Upload ${preview.rows.length} learner(s)`}
+                  {uploading ? 'Uploading…' : `Upload ${previewCheck?.validIndexes.length ?? 0} learner(s)`}
                 </button>
               </div>
             </div>
@@ -425,10 +443,30 @@ export default function LearnerProfilesPage() {
               <p className="rounded-lg bg-green-50 px-4 py-2 text-sm text-green-800">No identifying columns were found.</p>
             )}
 
+            {previewCheck && previewCheck.issues.length > 0 && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm" role="alert">
+                <p className="font-medium text-amber-900">
+                  {previewCheck.issues.length} row(s) will be skipped
+                  {previewCheck.validIndexes.length === 0 ? ' and there are no valid rows to upload' : ''}:
+                </p>
+                <ul className="mt-2 list-disc space-y-0.5 pl-5 text-amber-800">
+                  {previewCheck.issues.slice(0, 10).map((issue) => (
+                    <li key={issue.row}>
+                      Row {issue.row}: {issue.reason}
+                    </li>
+                  ))}
+                </ul>
+                {previewCheck.issues.length > 10 && (
+                  <p className="mt-1 text-amber-800">…and {previewCheck.issues.length - 10} more.</p>
+                )}
+              </div>
+            )}
+
             <div className="overflow-x-auto">
               <table className="min-w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-slate-200">
+                    <th className="px-2 py-1 font-semibold text-slate-700">Row</th>
                     {preview.headers.map((header) => (
                       <th
                         key={header}
@@ -443,7 +481,14 @@ export default function LearnerProfilesPage() {
                 </thead>
                 <tbody>
                   {preview.rows.slice(0, 5).map((row, index) => (
-                    <tr key={index} className="border-b border-slate-100">
+                    <tr
+                      key={index}
+                      className={`border-b border-slate-100 ${previewCheck?.issueRows.has(index + 2) ? 'bg-amber-50' : ''}`}
+                    >
+                      <td className="px-2 py-1 text-slate-500">
+                        {index + 2}
+                        {previewCheck?.issueRows.has(index + 2) && <span className="ml-1 text-amber-700">(skipped)</span>}
+                      </td>
                       {preview.headers.map((header) => (
                         <td
                           key={header}

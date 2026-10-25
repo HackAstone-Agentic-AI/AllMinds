@@ -126,6 +126,19 @@ const getAttentionList = async (req, res) => {
     }
 };
 
+const NAME_KEYS = ['pseudonym', 'preferredname', 'learnername', 'studentname', 'displayname',
+    'fullname', 'name', 'firstname', 'givenname'];
+
+// First non-empty name-like field, matching keys case- and punctuation-insensitively.
+const learnerName = (profile) => {
+    for (const [key, value] of Object.entries(profile || {})) {
+        if (NAME_KEYS.includes(key.toLowerCase().replace(/[^a-z]/g, '')) && String(value ?? '').trim()) {
+            return String(value).trim();
+        }
+    }
+    return '';
+};
+
 // Bulk insert learners (from CSV)
 const bulkCreateLearners = async (req, res) => {
     const teacherId = req.user.id;
@@ -139,13 +152,17 @@ const bulkCreateLearners = async (req, res) => {
         await client.query('BEGIN');
         let insertedCount = 0;
         let piiValuesRemoved = 0;
+        const invalidRows = [];
         for (const [index, learner] of learners.entries()) {
-            const anonymousId =
-                learner.anonymous_id ||
-                learner.anonymousId ||
-                learner['Anonymous ID'] ||
-                learner.learner_id ||
-                `LEARNER-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+            const providedId = String(
+                learner.anonymous_id || learner.anonymousId || learner['Anonymous ID'] || learner.learner_id || ''
+            ).trim();
+            // A record needs an ID or a name/pseudonym, otherwise nobody can tell who it is.
+            if (!providedId && !learnerName(learner.profile_data || learner)) {
+                invalidRows.push(index + 1);
+                continue;
+            }
+            const anonymousId = providedId || `LEARNER-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
 
             if (String(anonymousId).trim().length > 100) {
                 throw new Error(`Learner row ${index + 1} has an anonymous ID longer than 100 characters`);
@@ -179,16 +196,27 @@ const bulkCreateLearners = async (req, res) => {
             `, [teacherId, String(anonymousId).trim(), safeProfile]);
             insertedCount += insertResult.rowCount;
         }
+        if (invalidRows.length === learners.length) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({
+                error: 'No rows were uploaded: every row is missing a learner ID or name.',
+                invalid_rows: invalidRows,
+            });
+        }
         await client.query('COMMIT');
-        const skippedCount = learners.length - insertedCount;
+        const skippedCount = learners.length - insertedCount - invalidRows.length;
         const parts = [`${insertedCount} learner${insertedCount !== 1 ? 's' : ''} uploaded`];
         if (skippedCount > 0) {
             parts.push(`${skippedCount} duplicate${skippedCount !== 1 ? 's' : ''} skipped`);
+        }
+        if (invalidRows.length > 0) {
+            parts.push(`${invalidRows.length} row${invalidRows.length !== 1 ? 's' : ''} without a learner ID or name rejected`);
         }
         res.status(201).json({
             message: parts.join(', '),
             inserted: insertedCount,
             skipped: skippedCount,
+            invalid_rows: invalidRows,
             pii_values_removed: piiValuesRemoved,
         });
     } catch (err) {

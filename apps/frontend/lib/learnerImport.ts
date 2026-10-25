@@ -122,3 +122,58 @@ export const LEARNER_TEMPLATE_EXAMPLE: Record<string, unknown> = {
   strengths: 'Storytelling; Helping peers',
   recentNotes: 'Settles well with a visual timer',
 };
+
+// Compared after normaliseKey(), so "Anonymous ID", "anonymous_id" and "AnonymousID" all match.
+const ID_KEYS = ['anonymousid', 'learnerid'];
+const NAME_KEYS = [
+  'pseudonym', 'preferredname', 'learnername', 'studentname', 'displayname',
+  'fullname', 'name', 'firstname', 'givenname',
+];
+
+const firstValue = (row: Record<string, unknown>, keys: string[]) => {
+  for (const [key, value] of Object.entries(row)) {
+    if (!keys.includes(normaliseKey(key))) continue;
+    const text = String(value ?? '').trim();
+    if (text) return text;
+  }
+  return '';
+};
+
+export interface RowIssue {
+  row: number; // spreadsheet row number (header is row 1)
+  reason: string;
+}
+
+// A learner record needs at least an ID or a name/pseudonym; IDs must be unique within
+// the file and must not already exist for this teacher. Invalid rows are skipped and listed.
+export function validateLearnerRows(
+  rows: Record<string, unknown>[],
+  existingIds: Set<string>,
+): { validIndexes: number[]; issues: RowIssue[] } {
+  const validIndexes: number[] = [];
+  const issues: RowIssue[] = [];
+  const seen = new Map<string, number>();
+  rows.forEach((row, index) => {
+    const rowNumber = index + 2;
+    const id = firstValue(row, ID_KEYS);
+    const name = firstValue(row, NAME_KEYS);
+    if (!id && !name) {
+      issues.push({ row: rowNumber, reason: 'No learner ID or name' });
+      return;
+    }
+    if (id) {
+      const key = id.toLowerCase();
+      if (seen.has(key)) {
+        issues.push({ row: rowNumber, reason: `Duplicate ID "${id}" (same as row ${seen.get(key)})` });
+        return;
+      }
+      seen.set(key, rowNumber);
+      if (existingIds.has(key)) {
+        issues.push({ row: rowNumber, reason: `ID "${id}" already exists in your learner profiles` });
+        return;
+      }
+    }
+    validIndexes.push(index);
+  });
+  return { validIndexes, issues };
+}
