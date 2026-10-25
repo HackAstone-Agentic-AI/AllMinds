@@ -135,47 +135,6 @@ Picked up by the Next.js proxy route at server runtime. Not committed — each d
 
 ---
 
-## Environment Variables
-
-All variables live in a single `.env` file at the repo root (`AllMinds/.env`). Copy the values below as a starting point.
-
-```env
-# ── Ports ────────────────────────────────────────────────────────────────────
-PORT=5000
-
-# ── Database ─────────────────────────────────────────────────────────────────
-DB_HOST=localhost
-DB_PORT=5432
-DB_USER=postgres
-DB_PASSWORD=your_db_password
-DB_NAME=allminds_db
-
-# ── Auth ─────────────────────────────────────────────────────────────────────
-JWT_SECRET=your_jwt_secret
-JWT_EXPIRES_IN=7d
-BCRYPT_ROUNDS=10
-
-# ── Email ────────────────────────────────────────────────────────────────────
-EMAIL_HOST=smtp.gmail.com
-EMAIL_PORT=587
-EMAIL_USER=your_email@gmail.com
-EMAIL_PASS=your_app_password
-EMAIL_FROM=noreply@allminds.org
-
-# ── URLs ─────────────────────────────────────────────────────────────────────
-BACKEND_URL=http://localhost:5000
-FRONTEND_URL=http://localhost:3000
-NEXT_PUBLIC_API_URL=http://localhost:5000/api
-AGENTIC_AI_URL=http://127.0.0.1:8000
-ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
-APP_TIMEZONE=Africa/Johannesburg
-
-# ── AI API Keys ───────────────────────────────────────────────────────────────
-GROQ_API_KEY=your_groq_api_key         # Used by the supervisor agent (routing)
-GEMINI_API_KEY=your_gemini_api_key     # Used by all content-generating agents
-```
-
-> **Never commit real API keys.** The `.env` file is in `.gitignore`. Each developer must populate it locally.
 
 ---
 
