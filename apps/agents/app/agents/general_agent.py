@@ -12,6 +12,9 @@ def get_llm() -> ChatGoogleGenerativeAI | None:
     if not gemini_api_key:
         return None
 
+    # Gemini 2.5 "thinking" tokens count against max_tokens, which left chat replies
+    # empty or cut off. Flash models can turn thinking off; Pro models cannot.
+    thinking = {"thinking_budget": 0} if "flash" in STANDARD_MODEL else {}
     return ChatGoogleGenerativeAI(
         model=STANDARD_MODEL,
         api_key=gemini_api_key,
@@ -19,6 +22,7 @@ def get_llm() -> ChatGoogleGenerativeAI | None:
         max_tokens=800,
         timeout=60,
         max_retries=2,
+        **thinking,
     )
 
 # ─── System Prompt ────────────────────────────────────────────────────────────

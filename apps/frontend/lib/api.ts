@@ -162,10 +162,11 @@ createProgress: (learnerId: number, data: any) =>
   createStrategy: (data: any) => request('/strategies', { method: 'POST', body: JSON.stringify(data) }),
   voteStrategy: (id: number) => request(`/strategies/${id}/vote`, { method: 'POST' }),
 
-  // Thandi memory (Next.js proxy -> Express -> agents)
+  // Thandi memory and chat call the Express backend directly (like the rest of the app)
+  // rather than the Next.js proxy routes: serverless hosts time those out on long replies.
   getAgentMemory: async () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('allminds_token') : null;
-    const res = await fetch('/api/agent/memory', {
+    const res = await fetch(`${API_BASE}/agent/memory`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
     if (!res.ok) throw new Error('Could not load chat history');
@@ -173,7 +174,7 @@ createProgress: (learnerId: number, data: any) =>
   },
   clearAgentMemory: async () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('allminds_token') : null;
-    const res = await fetch('/api/agent/memory', {
+    const res = await fetch(`${API_BASE}/agent/memory`, {
       method: 'DELETE',
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
@@ -188,18 +189,32 @@ createProgress: (learnerId: number, data: any) =>
     signal?: AbortSignal,
   ) => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('allminds_token') : null;
-    const res = await fetch('/api/agent/chat/stream', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({ message, ...data }),
-      signal,
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${API_BASE}/agent/chat/stream`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ message, ...data }),
+        signal,
+      });
+    } catch (err) {
+      if (signal?.aborted) throw err;
+      throw new Error('Could not reach the All Minds server. Check your connection and try again.');
+    }
     if (!res.ok || !res.body) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || err.detail || 'Agent request failed');
+      if (res.status === 401 || res.status === 403) {
+        throw new Error('Your session has expired. Please sign out and sign in again.');
+      }
+      if (err.error || err.detail) throw new Error(err.error || err.detail);
+      throw new Error(
+        res.status >= 500
+          ? 'Thandi is temporarily unavailable (the AI service may be starting up). Please try again in a minute.'
+          : `Agent request failed (${res.status}).`,
+      );
     }
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
