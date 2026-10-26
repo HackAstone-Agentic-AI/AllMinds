@@ -70,8 +70,11 @@ const proxyAgentChat = async (req, res) => {
 const proxyAgentChatStream = async (req, res) => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 180_000);
-    // Stop the upstream generation if the teacher closes the chat.
-    req.on('close', () => controller.abort());
+    // Stop the upstream generation if the teacher closes the chat. This listens on res:
+    // since Node 16, req emits 'close' as soon as the body is read, not on disconnect.
+    res.on('close', () => {
+        if (!res.writableFinished) controller.abort();
+    });
     try {
         const upstream = await fetch(`${getAgentServiceUrl()}/chat/stream`, {
             method: 'POST',

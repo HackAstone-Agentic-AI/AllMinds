@@ -42,7 +42,8 @@ const securityHeaders = [
     { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
     {
         key: 'Permissions-Policy',
-        value: 'camera=(), microphone=(), geolocation=()',
+        // Thandi's chat uses the microphone for voice input, so allow it for this origin.
+        value: 'camera=(), microphone=(self), geolocation=()',
     },
     {
         key: 'Strict-Transport-Security',

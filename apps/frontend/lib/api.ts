@@ -205,20 +205,31 @@ createProgress: (learnerId: number, data: any) =>
     const decoder = new TextDecoder();
     let buffer = '';
     let done: Record<string, any> | null = null;
+    // Returns the final payload for a "done" event; token events go to onToken.
+    const handle = (raw: string): Record<string, any> | null => {
+      const line = raw.trim();
+      if (!line.startsWith('data:')) return null;
+      let event: Record<string, any>;
+      try {
+        event = JSON.parse(line.slice(5).trim());
+      } catch {
+        return null; // skip a malformed event rather than dropping the whole reply
+      }
+      if (event.type === 'token' && typeof event.text === 'string') onToken(event.text);
+      return event.type === 'done' ? event : null;
+    };
     for (;;) {
       const { value, done: finished } = await reader.read();
       if (finished) break;
-      buffer += decoder.decode(value, { stream: true });
+      // Proxies may rewrite line endings to CRLF; normalise so events still split.
+      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
       const events = buffer.split('\n\n');
       buffer = events.pop() || '';
-      for (const raw of events) {
-        const line = raw.trim();
-        if (!line.startsWith('data:')) continue;
-        const event = JSON.parse(line.slice(5).trim());
-        if (event.type === 'token') onToken(event.text);
-        else if (event.type === 'done') done = event;
-      }
+      for (const raw of events) done = handle(raw) || done;
     }
+    // The last event may arrive without a trailing blank line.
+    buffer += decoder.decode().replace(/\r\n/g, '\n');
+    if (buffer.trim()) done = handle(buffer) || done;
     if (!done) throw new Error('The reply was interrupted. Please try again.');
     return done;
   },

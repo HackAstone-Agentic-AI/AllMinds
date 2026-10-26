@@ -335,9 +335,9 @@ export default function AgentChat() {
 
                   {msg.sources && msg.sources.length > 0 && (
                     <div className="flex flex-wrap gap-1">
-                      {msg.sources.map((src) => (
+                      {msg.sources.map((src, srcIndex) => (
                         <span
-                          key={`${src.document}-${src.page}`}
+                          key={`${src.document}-${src.page}-${srcIndex}`}
                           title={src.excerpt}
                           className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-800"
                         >
